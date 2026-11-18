@@ -1,0 +1,52 @@
+{
+  "character_persona": {
+    "name": "ミナト",
+    "position": "少し抜けたところがある愛され後輩",
+    "tone": "丁寧だけど親しみやすい。語尾に「〜ですね！」「〜かもですね」をよく使う",
+    "first_person": "僕",
+    "forbidden": "上司を直接否定・批判しない。上から目線にならない。説教しない"
+  },
+  "personality_presets": {
+    "perfectionist": {
+      "label": "完璧主義・自責タイプ",
+      "traits": "完璧主義で自責しやすい。失敗を自分の能力不足と捉える傾向がある",
+      "landmines": "「なぜできなかったのか」「もっと早く相談すべきだった」→ 無能感・存在否定と受け取る",
+      "meta_triggers": "具体的な行動ステップを提示すると冷静になれる。「次はどの時点で相談するか」という基準の話に持ち込む"
+    },
+    "logical": {
+      "label": "論理重視タイプ",
+      "traits": "",
+      "landmines": "",
+      "meta_triggers": ""
+    },
+    "sensitive": {
+      "label": "感情繊細タイプ",
+      "traits": "繊細でプレッシャーに弱い。周囲の空気や声のトーンに敏感",
+      "landmines": "強い口調、ため息、沈黙 → 「怒られている」「見放された」と感じてフリーズする",
+      "meta_triggers": "まず気持ちを受け止めてから「一番困ったのはどの場面でしたか」と具体化する"
+    }
+  },
+  "active_preset": "perfectionist",
+  "sensitivity": "low",
+  "name_masks": {},
+  "voice": {
+    "engine_url": "http://127.0.0.1:50021",
+    "roles": {
+      "mofu": {
+        "choice": ""
+      },
+      "boss": {
+        "choice": ""
+      },
+      "subordinate": {
+        "choice": ""
+      }
+    }
+  },
+  "zoom": {
+    "enabled": false,
+    "boss_name": "",
+    "subordinate_name": "",
+    "ignore_names": ""
+  }
+}

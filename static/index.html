@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ミナト｜1on1見守りAI</title>
+  <link rel="stylesheet" href="/static/style.css?v=12">
+</head>
+<body>
+<div id="app" data-screen="start">
+
+  <header class="topbar">
+    <button class="brand" id="brandHome" type="button" aria-label="スタート画面に戻る">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">ミナト</span>
+      <span class="brand-sub">1on1見守りAI</span>
+    </button>
+    <ol class="stepper" id="stepper" aria-label="進行状況">
+      <li data-step="analyze"><span>1</span>特性分析</li>
+      <li data-step="profile"><span>2</span>確認</li>
+      <li data-step="voices"><span>3</span>声の登録</li>
+      <li data-step="meeting"><span>4</span>面談</li>
+      <li data-step="summary"><span>5</span>ふりかえり</li>
+    </ol>
+    <button class="icon-btn" id="btnSettings" type="button" aria-label="設定を開く" title="設定">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <!-- ① スタート -->
+    <section class="screen" data-screen="start">
+      <div class="hero">
+        <div class="hero-visual">
+          <div class="hero-glow" aria-hidden="true"></div>
+          <div class="char char-xl" id="charStart"></div>
+          <div class="bubble bubble-hero">はじめまして、ミナトです！<br>1on1にそっと同席しますね。</div>
+        </div>
+        <div class="hero-copy">
+          <p class="eyebrow">1on1 性格連動型 見守りAI</p>
+          <h1>部下の<span class="marker">受け止め方</span>に寄り添う、<br>1on1の見守り役。</h1>
+          <p class="lead">同じひとことでも、性格によって響き方は変わります。ミナトは上司と部下の声を聞き分けながら会話を見守り、部下が萎縮しそうな瞬間だけ、やさしく言い換えを提案します。</p>
+          <div class="cta-row">
+            <button class="btn btn-primary btn-lg" id="btnBegin" type="button">部下の特性分析からはじめる</button>
+            <button class="btn btn-ghost btn-lg" id="btnQuick" type="button" hidden>前回の分析で面談する</button>
+          </div>
+          <p class="quick-note" id="quickNote" hidden></p>
+          <p class="quick-note"><button class="btn-text" id="btnMeasure" type="button">音声の計測テスト（認識の速さ・区切り）</button></p>
+        </div>
+      </div>
+
+      <ol class="flow">
+        <li>
+          <span class="flow-num">1</span>
+          <div><b>特性を分析</b><small>8つの質問で、部下の受け止め方の傾向をつかみます</small></div>
+        </li>
+        <li>
+          <span class="flow-num">2</span>
+          <div><b>声を登録</b><small>同じ文を読んでもらい、上司と部下の声を見分けられるようにします</small></div>
+        </li>
+        <li>
+          <span class="flow-num">3</span>
+          <div><b>ミナトが同席</b><small>誰が話したかを表示し、必要なときだけ言い換えを提案します</small></div>
+        </li>
+        <li>
+          <span class="flow-num">4</span>
+          <div><b>ふりかえり</b><small>介入の記録と、上司・部下が話していた割合を確認できます</small></div>
+        </li>
+      </ol>
+
+      <p class="trust-note">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        上司・部下の声の聞き分けはブラウザ内だけで行い、ログはこのPC内にのみ保存されます（文字起こしはChromeの音声認識を使用）
+      </p>
+    </section>
+
+    <!-- ② 特性分析 -->
+    <section class="screen" data-screen="analyze" hidden>
+      <div class="narrow">
+        <div class="guide">
+          <div class="char char-sm" id="charAnalyze"></div>
+          <div class="bubble bubble-left" id="analyzeBubble">部下さんのこと、少し教えてください！ふだんの様子にいちばん近いものを選んでくださいね。</div>
+        </div>
+
+        <div class="question-wrap" id="questionWrap">
+          <div class="progress" aria-hidden="true"><div class="progress-bar" id="qProgress"></div></div>
+          <div class="question card" id="questionCard">
+            <div class="q-meta"><span class="q-num" id="qNum">Q1</span><span class="q-count" id="qCount">1 / 8</span></div>
+            <p class="q-text" id="qText"></p>
+            <div class="q-options" id="qOptions" role="radiogroup"></div>
+          </div>
+          <div class="q-nav">
+            <button class="btn btn-text" id="qPrev" type="button">← 前の質問</button>
+            <button class="btn btn-text" id="btnShowPresets" type="button">質問をスキップしてタイプを選ぶ</button>
+          </div>
+        </div>
+
+        <div class="presets" id="presetPicker" hidden>
+          <h2 class="section-title">タイプを直接選ぶ</h2>
+          <div class="preset-grid" id="presetGrid"></div>
+          <button class="btn btn-text" id="btnBackToQuestions" type="button">← 質問に戻る</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ 分析結果・確認 -->
+    <section class="screen" data-screen="profile" hidden>
+      <div class="profile-layout">
+        <div class="profile-main">
+          <div class="card result-card">
+            <p class="eyebrow">分析結果</p>
+            <h2 class="result-title" id="pfLabel"></h2>
+            <p class="result-sub" id="pfSecondary"></p>
+            <div class="score-bars" id="pfScores"></div>
+            <p class="result-traits" id="pfTraits"></p>
+            <p class="notice" id="pfLowSignal" hidden>強い傾向は見られませんでした。介入感度は「低」がおすすめです。</p>
+          </div>
+
+          <div class="two-col">
+            <div class="card">
+              <h3 class="card-title"><span class="dot dot-warn"></span>ミナトが特に気をつける言い方</h3>
+              <ul class="watch-list" id="pfWatch"></ul>
+            </div>
+            <div class="card">
+              <h3 class="card-title"><span class="dot dot-ok"></span>響きやすい伝え方</h3>
+              <p class="body-text" id="pfApproach"></p>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="card-title">介入の感度</h3>
+            <div class="segmented" id="sensitivity" role="radiogroup" aria-label="介入の感度">
+              <button type="button" data-level="low" role="radio"><b>控えめ</b><small>明確な詰問・人格否定だけ</small></button>
+              <button type="button" data-level="medium" role="radio"><b>ふつう</b><small>プレッシャーや抽象的な指摘も</small></button>
+              <button type="button" data-level="high" role="radio"><b>積極的</b><small>軽い指摘でも言い換えを提案</small></button>
+            </div>
+            <p class="recommend" id="pfRecommend"></p>
+          </div>
+
+          <details class="card details">
+            <summary>プロファイルを詳しく編集する</summary>
+            <div class="form-grid">
+              <label class="field"><span>性格特性</span><textarea id="pfEditTraits" rows="2"></textarea></label>
+              <label class="field"><span>地雷ポイント（萎縮しやすい言い方）</span><textarea id="pfEditLandmines" rows="2"></textarea></label>
+              <label class="field"><span>メタ認知トリガー（響く問いかけ）</span><textarea id="pfEditMeta" rows="2"></textarea></label>
+            </div>
+          </details>
+        </div>
+
+        <aside class="profile-side">
+          <div class="side-sticky">
+            <div class="char char-md" id="charProfile"></div>
+            <div class="bubble bubble-top" id="profileBubble">わかりました！今日はこの特性に合わせて、そっと見守りますね。</div>
+            <button class="btn btn-primary btn-lg btn-block" id="btnToVoices" type="button">次へ：お二人の声を登録する</button>
+            <button class="btn btn-ghost btn-block" id="btnReanalyze" type="button">分析をやり直す</button>
+            <p class="hint">次の画面でマイクの使用許可を求められます。Chromeでご利用ください。</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ④ 声の登録 -->
+    <section class="screen" data-screen="voices" hidden>
+      <div class="narrow-wide">
+        <div class="guide">
+          <div class="char char-sm" id="charVoices"></div>
+          <div class="bubble bubble-left" id="voicesBubble">お二人の声を覚えますね！同じ文を読んでもらうと、面談中に「いま話したのは上司さんか部下さんか」を見分けられます。</div>
+        </div>
+
+        <div class="card read-card">
+          <p class="eyebrow">読み上げる文（お二人とも同じ文を読んでください）</p>
+          <p class="read-text">今日はよろしくお願いします。最近の仕事の様子や、気になっていることを、順番に話していきますね。</p>
+        </div>
+
+        <p class="notice notice-error" id="micError" hidden></p>
+
+        <div class="enroll-grid">
+          <div class="card enroll" id="enrollBoss" data-role="boss" data-state="empty">
+            <div class="enroll-head">
+              <div class="person-wrap person-sm" id="personEnrollBoss"></div>
+              <div>
+                <b class="enroll-name">上司の声</b>
+                <small class="enroll-status">まだ登録していません</small>
+              </div>
+            </div>
+            <div class="meter" aria-hidden="true"><div class="meter-fill"></div></div>
+            <button class="btn btn-role" type="button" data-action="record">録音して登録する</button>
+          </div>
+          <div class="card enroll" id="enrollSub" data-role="subordinate" data-state="empty">
+            <div class="enroll-head">
+              <div class="person-wrap person-sm" id="personEnrollSub"></div>
+              <div>
+                <b class="enroll-name">部下の声</b>
+                <small class="enroll-status">まだ登録していません</small>
+              </div>
+            </div>
+            <div class="meter" aria-hidden="true"><div class="meter-fill"></div></div>
+            <button class="btn btn-role" type="button" data-action="record">録音して登録する</button>
+          </div>
+        </div>
+
+        <div class="card sep-card" id="sepCard" data-level="" hidden>
+          <div class="sep-head">
+            <span class="sep-mark" id="sepMark"></span>
+            <div>
+              <b id="sepTitle"></b>
+              <p class="sep-text" id="sepText"></p>
+            </div>
+          </div>
+          <div class="try-row">
+            <button class="btn btn-ghost" id="btnTry" type="button">試しに話して確かめる</button>
+            <span class="try-result" id="tryResult" aria-live="polite"></span>
+          </div>
+        </div>
+
+        <div class="cta-row center">
+          <button class="btn btn-primary btn-lg" id="btnStartMeeting" type="button">ミナトを同席させて面談を開始</button>
+          <button class="btn btn-ghost btn-lg" id="btnSkipVoices" type="button">声を登録せずに始める</button>
+        </div>
+        <p class="hint" id="voicesHint">登録しない場合は、面談中に画面上部の「上司／部下」ボタンで話者を切り替えます。</p>
+        <p class="hint privacy-hint">保存するのは声の特徴を表す数値（24個）だけで、このブラウザのメモリにだけ置きます。録音した音声は保存しません。</p>
+      </div>
+    </section>
+
+    <!-- ⑤ 面談 -->
+    <section class="screen" data-screen="meeting" hidden>
+      <div class="meeting-bar card">
+        <div class="mb-left">
+          <span class="status-pill" id="mtStatus" data-state="idle"><span class="pulse"></span><span id="mtStatusText">準備中</span></span>
+          <span class="timer" id="mtTimer">00:00</span>
+        </div>
+        <div class="speaker-mode" id="speakerMode" role="radiogroup" aria-label="話者の見分け方">
+          <span class="sm-label">話者</span>
+          <span class="zoom-badge">Zoomの参加者名で判定</span>
+          <button type="button" data-mode="auto" role="radio" title="登録した声で自動判定（キー 0）">声で自動<kbd>0</kbd></button>
+          <button type="button" data-mode="boss" role="radio" title="これからの発言をすべて上司として扱う（キー 1）"><i class="sw sw-boss"></i>上司<kbd>1</kbd></button>
+          <button type="button" data-mode="subordinate" role="radio" title="これからの発言をすべて部下として扱う（キー 2）"><i class="sw sw-sub"></i>部下<kbd>2</kbd></button>
+        </div>
+        <div class="mb-right">
+          <button class="btn btn-ghost" id="btnDemo" type="button">▶ デモ会話を再生</button>
+          <button class="btn btn-danger" id="btnEndMeeting" type="button">面談を終了</button>
+        </div>
+      </div>
+
+      <div class="meeting-layout">
+        <div class="stage card">
+          <div class="stage-chips">
+            <span class="chip" id="mtType"></span>
+            <span class="chip chip-muted" id="mtSensitivity"></span>
+            <span class="chip chip-muted" id="mtEngine" title="Claude APIが使えない間は、端末内の判定エンジンで動作します">ローカル判定</span>
+          </div>
+
+          <div class="scene" id="scene">
+            <div class="seat" id="seatBoss" data-role="boss">
+              <div class="seat-bubble" hidden><span class="sb-text"></span></div>
+              <div class="seat-figure"><span class="seat-ring" aria-hidden="true"></span><div class="person-wrap" id="personBoss"></div></div>
+              <div class="nameplate"><i class="np-dot"></i>上司</div>
+            </div>
+
+            <div class="seat seat-mofu" data-role="mofu">
+              <div class="char char-stage" id="charMeeting"></div>
+              <div class="nameplate"><i class="np-dot"></i><span id="npMofu">ミナト</span><small>見守りAI</small></div>
+            </div>
+
+            <div class="seat" id="seatSub" data-role="subordinate">
+              <div class="seat-bubble" hidden><span class="sb-text"></span></div>
+              <div class="seat-figure"><span class="seat-ring" aria-hidden="true"></span><div class="person-wrap" id="personSub"></div></div>
+              <div class="nameplate"><i class="np-dot"></i>部下</div>
+              <div class="forecast" id="forecast" data-level="calm" title="分析した特性から予想した受け止め方です（実際の気持ちを測ったものではありません）">
+                <small>受け止め予報</small><span id="forecastText">おだやか</span>
+              </div>
+            </div>
+            <div class="scene-table" aria-hidden="true"></div>
+          </div>
+
+          <p class="stage-caption" id="stageCaption">会話を聞いています…</p>
+
+          <div class="speech" id="speech" hidden>
+            <p class="speech-cushion" id="speechCushion"></p>
+            <p class="speech-text" id="speechText"></p>
+            <div class="speech-feedback" id="speechFeedback" hidden>
+              <button type="button" data-feedback="good">助かった</button>
+              <button type="button" data-feedback="bad">今のは不要</button>
+            </div>
+          </div>
+          <div class="hint-card" id="hintCard" data-kind="boss" hidden>
+            <div class="hint-head">
+              <span id="hintTitle">💡 上司向けヒント</span>
+              <small>画面のみ・音声では伝えません</small>
+            </div>
+            <p class="hint-text" id="hintText"></p>
+            <p class="hint-reason" id="hintReason"></p>
+          </div>
+          <p class="voice-credit" id="voiceCredit"></p>
+        </div>
+
+        <aside class="transcript card">
+          <div class="transcript-head">
+            <h3>会話ログ</h3>
+            <span class="counts" id="mtCounts">上司 0 ・ 部下 0 ・ ひとこと 0</span>
+          </div>
+          <p class="transcript-tip">名前の札をクリックすると、話者を直せます</p>
+          <div class="transcript-list" id="transcript" aria-live="polite">
+            <p class="empty">話し始めると、ここに文字起こしが表示されます</p>
+          </div>
+          <form class="test-input" id="testForm" autocomplete="off">
+            <button class="who-toggle" id="testWho" type="button" data-speaker="boss" title="クリックで上司／部下を切り替え">上司</button>
+            <input id="testText" type="text" placeholder="テキストで発言を試す（マイクが使えない時用）" aria-label="テキストで発言を入力">
+            <button class="btn btn-ghost" type="submit">送信</button>
+          </form>
+        </aside>
+      </div>
+
+      <details class="card details security">
+        <summary>外部に送ったデータの確認</summary>
+        <pre class="data-preview" id="dataPreview">まだ判定していません</pre>
+      </details>
+    </section>
+
+    <!-- ⑥ ふりかえり -->
+    <section class="screen" data-screen="summary" hidden>
+      <div class="narrow-wide">
+        <div class="summary-head">
+          <div class="char char-md" id="charSummary"></div>
+          <div>
+            <p class="eyebrow">面談のふりかえり</p>
+            <h2 class="summary-title">おつかれさまでした！</h2>
+            <p class="muted" id="smSubtitle"></p>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat card"><span class="stat-label">面談時間</span><span class="stat-value" id="smDuration">0:00</span></div>
+          <div class="stat card stat-boss"><span class="stat-label">上司の発言</span><span class="stat-value" id="smBoss">0</span></div>
+          <div class="stat card stat-sub"><span class="stat-label">部下の発言</span><span class="stat-value" id="smSub">0</span></div>
+          <div class="stat card"><span class="stat-label">ミナトのひとこと</span><span class="stat-value" id="smInterv">0</span></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">話していた割合（文字数）</h3>
+          <div class="ratio" id="smRatio">
+            <div class="ratio-bar"><span class="ratio-boss" id="smRatioBoss"></span><span class="ratio-sub" id="smRatioSub"></span></div>
+            <div class="ratio-legend"><span><i class="sw sw-boss"></i>上司 <b id="smRatioBossVal">0%</b></span><span><i class="sw sw-sub"></i>部下 <b id="smRatioSubVal">0%</b></span></div>
+          </div>
+          <p class="body-text ratio-note" id="smRatioNote"></p>
+          <p class="muted ratio-auto" id="smAuto"></p>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">検出された言い方の傾向</h3>
+          <p class="muted ratio-auto" id="smOutcomes"></p>
+          <div class="cat-bars" id="smCategories"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">介入と部下のサインの記録</h3>
+          <ol class="interv-list" id="smList"></ol>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">音声の計測（実測）</h3>
+          <div id="smMetrics"></div>
+        </div>
+
+        <p class="log-path" id="smFile"></p>
+
+        <div class="cta-row center">
+          <button class="btn btn-primary btn-lg" id="btnAgain" type="button">同じ設定でもう一度面談する</button>
+          <button class="btn btn-ghost btn-lg" id="btnHome" type="button">スタートに戻る</button>
+        </div>
+      </div>
+    </section>
+    <!-- 音声の計測テスト -->
+    <section class="screen" data-screen="measure" hidden>
+      <div class="narrow-wide">
+        <div class="card measure">
+          <p class="eyebrow">音声の計測テスト</p>
+          <h2 class="card-title">決まった10文を読み上げて、認識の速さと区切りを測ります</h2>
+
+          <div id="mIntro">
+            <p class="body-text">画面に出る文を、指示に合わせて1文ずつ読み上げてください。話し終わってから確定文が返るまでの時間、文の途中で確定してしまわないか、認識結果が読んだ文と合っているかを測ります。所要時間は2〜3分です。</p>
+            <ul class="measure-notes">
+              <li>静かな場所で、面談と同じマイクと姿勢で行ってください</li>
+              <li>「間をあけて」の指示がある2文は、指示どおり約1秒止めてください</li>
+              <li>文字起こしのため、音声はChromeから外部へ送られます。保存するのは時間・件数・一致率だけで、文の本文は保存しません</li>
+            </ul>
+            <p class="muted" id="mError" hidden></p>
+            <div class="cta-row">
+              <button class="btn btn-primary btn-lg" id="mStart" type="button">計測を始める</button>
+              <button class="btn btn-ghost btn-lg" id="mBack" type="button">スタートに戻る</button>
+            </div>
+          </div>
+
+          <div id="mRun" hidden>
+            <div class="progress"><div class="progress-bar" id="mBar"></div></div>
+            <p class="q-count" id="mCount"></p>
+            <p class="measure-prompt" id="mPrompt"></p>
+            <p class="measure-hint" id="mHint"></p>
+            <p class="measure-state" id="mState" role="status"></p>
+            <div class="cta-row">
+              <button class="btn btn-ghost" id="mSkip" type="button">この文を飛ばす</button>
+              <button class="btn btn-danger" id="mStop" type="button">中止する</button>
+            </div>
+          </div>
+
+          <div id="mResult" hidden>
+            <div id="mSummary"></div>
+            <div class="metric-scroll"><table class="metric-table" id="mTable"></table></div>
+            <p class="muted metric-note" id="mNote"></p>
+            <p class="log-path" id="mFile"></p>
+            <div class="cta-row">
+              <button class="btn btn-primary" id="mCopy" type="button">結果をコピー</button>
+              <button class="btn btn-ghost" id="mAgain" type="button">もう一度測る</button>
+              <button class="btn btn-ghost" id="mHome" type="button">スタートに戻る</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 設定ドロワー -->
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="drawer" id="drawer" aria-label="設定" hidden>
+    <div class="drawer-head">
+      <h2>設定</h2>
+      <button class="icon-btn" id="btnCloseDrawer" type="button" aria-label="設定を閉じる">✕</button>
+    </div>
+    <div class="drawer-body">
+      <h3 class="drawer-section">キャラクター</h3>
+      <label class="field"><span>名前</span><input id="setName" type="text"></label>
+      <label class="field"><span>立ち位置</span><input id="setPosition" type="text"></label>
+      <label class="field"><span>口調</span><textarea id="setTone" rows="2"></textarea></label>
+
+      <h3 class="drawer-section">声</h3>
+      <div class="engine-status" id="engineStatus" data-ok="false">音声エンジンを確認しています…</div>
+      <p class="field-help">無料の音声ソフト VOICEVOX を起動しておくと、やわらかく自然な声で話します。起動していない間は、このPCに入っている声を使います。</p>
+      <div class="voice-row">
+        <label class="field"><span>ミナトの声</span><select id="voiceMofu"></select></label>
+        <button class="icon-btn" type="button" data-preview="mofu" aria-label="ミナトの声を試聴">▶</button>
+      </div>
+      <div class="voice-row">
+        <label class="field"><span>上司の声（デモ再生用）</span><select id="voiceBoss"></select></label>
+        <button class="icon-btn" type="button" data-preview="boss" aria-label="上司の声を試聴">▶</button>
+      </div>
+      <div class="voice-row">
+        <label class="field"><span>部下の声（デモ再生用）</span><select id="voiceSub"></select></label>
+        <button class="icon-btn" type="button" data-preview="subordinate" aria-label="部下の声を試聴">▶</button>
+      </div>
+      <label class="field"><span>音声エンジンのURL</span><input id="setEngineUrl" type="text" placeholder="http://127.0.0.1:50021"></label>
+      <p class="field-help">VOICEVOXは http://127.0.0.1:50021、AivisSpeechは http://127.0.0.1:10101 です。このPC上のエンジンだけを使います。</p>
+
+      <h3 class="drawer-section">話すタイミングと判定</h3>
+      <label class="field"><span>ミナトが声で話す頻度</span>
+        <select id="setPace">
+          <option value="normal">ふつう（90秒以上あけて、30分で5回まで）</option>
+          <option value="gentle">控えめ（5分以上あけて、30分で3回まで）</option>
+          <option value="check">確認用（8秒あければ話す）</option>
+        </select>
+      </label>
+      <p class="field-help">上限に達した回や話すタイミングがなかった回は、声を出さず画面に表示します。回数はいずれも仮の値です。</p>
+      <label class="check-row"><input type="checkbox" id="setUseClaude"> Claudeでも判定する（外部送信あり・API利用料あり）</label>
+      <p class="field-help">オンにすると、気になる言い方が見つかった発言について、匿名化した発言、直近の会話（部下の発言を含む）、部下の特性をAnthropicへ送ります。オフならすべてこのPC内で判定します。</p>
+
+      <h3 class="drawer-section">プライバシー</h3>
+      <label class="check-row"><input type="checkbox" id="setShowProfile"> この画面は上司だけが見ている（部下の特性を表示する）</label>
+      <p class="field-help">オフの間は、面談画面とふりかえりに部下のタイプや傾向を表示しません。部下と同じ画面を見る場合や画面共有中はオフのままにしてください。</p>
+      <label class="check-row"><input type="checkbox" id="setLogRaw"> ログに発言の原文を保存する</label>
+      <p class="field-help">オフの間は、発言の文字数と判定結果だけを保存します。</p>
+
+      <h3 class="drawer-section">Zoom連携</h3>
+      <label class="check-row"><input type="checkbox" id="zoomEnabled"> Zoomの参加者名で上司・部下を見分ける</label>
+      <p class="field-help">オンにすると、このPCのマイクではなく、Zoomから届く話者名つきの文字起こしを使います（Zoomのアプリ登録が必要。手順は「Zoom連携_設計.md」）。</p>
+      <label class="field"><span>上司のZoom表示名</span><input id="zoomBoss" type="text" placeholder="例：山田 太郎"></label>
+      <label class="field"><span>部下のZoom表示名</span><input id="zoomSub" type="text" placeholder="例：佐藤 花子"></label>
+      <label class="field"><span>無視する表示名（ミナトを流すPCなど。カンマ区切り）</span><input id="zoomIgnore" type="text" placeholder="例：ミナト"></label>
+      <div class="engine-status" id="zoomStatus" data-ok="false">Zoom連携の状態を確認しています…</div>
+
+      <h3 class="drawer-section">名前マスキング</h3>
+      <p class="field-help">判定に送る前に、実名を別の呼び方に置き換えます。</p>
+      <div id="maskList" class="mask-list"></div>
+      <button class="btn btn-text" id="btnAddMask" type="button">＋ 置き換えを追加</button>
+    </div>
+    <div class="drawer-foot">
+      <button class="btn btn-primary btn-block" id="btnSaveSettings" type="button">保存する</button>
+    </div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="/static/voiceprint.js?v=12"></script>
+<script src="/static/mofu.js?v=12"></script>
+<script src="/static/people.js?v=12"></script>
+<script src="/static/turn.js?v=12"></script>
+<script src="/static/metrics.js?v=12"></script>
+<script src="/static/audio.js?v=12"></script>
+<script src="/static/app.js?v=13"></script>
+<script src="/static/measure.js?v=12"></script>
+</body>
+</html>
