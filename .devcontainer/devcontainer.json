@@ -5,9 +5,15 @@
     "ALLOWED_HOST_SUFFIXES": ".app.github.dev"
   },
   "postCreateCommand": "pip install -r requirements.txt && cp -n config.example.json config.json",
-  "postStartCommand": "nohup python3 -m uvicorn main:app --host 127.0.0.1 --port 8001 > /tmp/minato.log 2>&1 &",
-  "forwardPorts": [8001],
+  "postStartCommand": "bash .devcontainer/start.sh",
+  "forwardPorts": [
+    8001
+  ],
   "portsAttributes": {
-    "8001": { "label": "ミナト（Chromeで開く）", "onAutoForward": "openBrowser" }
-  }
+    "8001": {
+      "label": "ミナト（Chromeで開く）",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postAttachCommand": "bash .devcontainer/start.sh"
 }
