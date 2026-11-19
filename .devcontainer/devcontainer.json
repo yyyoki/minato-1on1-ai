@@ -15,5 +15,12 @@
       "onAutoForward": "openBrowser"
     }
   },
-  "postAttachCommand": "bash .devcontainer/start.sh"
+  "postAttachCommand": "bash .devcontainer/start.sh",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "task.allowAutomaticTasks": "on"
+      }
+    }
+  }
 }
