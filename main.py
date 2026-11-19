@@ -1,5 +1,8 @@
 import os
+import base64
+import hmac
 import json
+import shutil
 import re
 import threading
 import time
@@ -37,7 +40,21 @@ class LocalOnly:
     ALLOWED = {"127.0.0.1", "localhost", "::1"}
     # GitHub Codespaces など、転送用のホスト名を使う環境でだけ、環境変数で追加を許可する（既定は空）。
     # 例：ALLOWED_HOST_SUFFIXES=".app.github.dev"（先頭のドットが必要）
+    # 公開サーバー用の合言葉（HTTP Basic認証。ユーザー名は何でもよい）。設定すると、すべてのアクセスに求める。
+    # PUBLIC_MODE=1 のときは、合言葉が未設定なら全アクセスを拒否する（うっかり無防備で公開しないため）
+    PASSWORD = os.environ.get("ACCESS_PASSWORD", "")
+    PUBLIC_MODE = os.environ.get("PUBLIC_MODE") == "1"
     SUFFIXES = tuple(x.strip() for x in os.environ.get("ALLOWED_HOST_SUFFIXES", "").split(",") if x.strip().startswith("."))
+
+    @classmethod
+    def password_ok(cls, header):
+        if not header or not header.lower().startswith("basic "):
+            return False
+        try:
+            raw = base64.b64decode(header[6:].strip()).decode("utf-8")
+        except Exception:
+            return False
+        return hmac.compare_digest(raw.partition(":")[2].encode(), cls.PASSWORD.encode())
 
     @classmethod
     def host_ok(cls, name):
@@ -55,6 +72,13 @@ class LocalOnly:
             if not self.host_ok(host) or not origin_ok:
                 await JSONResponse({"error": "forbidden"}, status_code=403)(scope, receive, send)
                 return
+            if self.PUBLIC_MODE and not self.PASSWORD:
+                await JSONResponse({"error": "ACCESS_PASSWORD が未設定のため、公開モードでは使えません"}, status_code=503)(scope, receive, send)
+                return
+            if self.PASSWORD and not self.password_ok(headers.get("authorization")):
+                await JSONResponse({"error": "合言葉が必要です"}, status_code=401,
+                                   headers={"WWW-Authenticate": 'Basic realm="minato", charset="UTF-8"'})(scope, receive, send)
+                return
         await self.inner(scope, receive, send)
 
 
@@ -62,6 +86,8 @@ app.add_middleware(LocalOnly)
 
 BASE_DIR = Path(__file__).parent
 CONFIG_PATH = BASE_DIR / "config.json"
+if not CONFIG_PATH.exists() and (BASE_DIR / "config.example.json").exists():
+    shutil.copy(BASE_DIR / "config.example.json", CONFIG_PATH)  # 初回起動・公開サーバー用
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 

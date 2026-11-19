@@ -1,0 +1,17 @@
+# Render（無料枠）で公開するための設定。Render の「Blueprint」から、このリポジトリを選ぶと使われる。
+services:
+  - type: web
+    name: minato-1on1-ai
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: PUBLIC_MODE            # 合言葉が未設定なら、全アクセスを拒否する
+        value: "1"
+      - key: ALLOWED_HOST_SUFFIXES  # Render のホスト名を許可する
+        value: .onrender.com
+      - key: ACCESS_PASSWORD        # 合言葉。値は Render の画面で入力する（リポジトリには書かない）
+        sync: false
