@@ -11,11 +11,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 import anthropic
 import requests
@@ -46,6 +46,20 @@ class LocalOnly:
     PUBLIC_MODE = os.environ.get("PUBLIC_MODE") == "1"
     SUFFIXES = tuple(x.strip() for x in os.environ.get("ALLOWED_HOST_SUFFIXES", "").split(",") if x.strip().startswith("."))
 
+    COOKIE = "minato_auth"
+
+    @classmethod
+    def token(cls):
+        return hmac.new(cls.PASSWORD.encode(), b"minato-session-v1", "sha256").hexdigest()
+
+    @classmethod
+    def cookie_ok(cls, header):
+        for part in (header or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == cls.COOKIE and hmac.compare_digest(v, cls.token()):
+                return True
+        return False
+
     @classmethod
     def password_ok(cls, header):
         if not header or not header.lower().startswith("basic "):
@@ -75,10 +89,14 @@ class LocalOnly:
             if self.PUBLIC_MODE and not self.PASSWORD:
                 await JSONResponse({"error": "ACCESS_PASSWORD が未設定のため、公開モードでは使えません"}, status_code=503)(scope, receive, send)
                 return
-            if self.PASSWORD and not self.password_ok(headers.get("authorization")):
-                await JSONResponse({"error": "合言葉が必要です"}, status_code=401,
-                                   headers={"WWW-Authenticate": 'Basic realm="minato", charset="UTF-8"'})(scope, receive, send)
-                return
+            if self.PASSWORD and not (self.password_ok(headers.get("authorization")) or self.cookie_ok(headers.get("cookie"))):
+                if scope["path"] != "/login":
+                    if scope["method"] == "GET" and "text/html" in headers.get("accept", ""):
+                        await RedirectResponse("/login", status_code=303)(scope, receive, send)  # 画面で開いた人はログイン画面へ
+                    else:
+                        await JSONResponse({"error": "合言葉が必要です"}, status_code=401,
+                                           headers={"WWW-Authenticate": 'Basic realm="minato", charset="UTF-8"'})(scope, receive, send)
+                    return
         await self.inner(scope, receive, send)
 
 
@@ -1091,6 +1109,60 @@ def save_measure(req: MeasureRequest):
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump({"measured_at": datetime.now().isoformat(), "raw_text_saved": False, "results": rows}, f, ensure_ascii=False, indent=2)
     return JSONResponse({"status": "saved", "file": str(filepath), "count": len(rows)})
+
+
+LOGIN_HTML = """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミナト｜合言葉</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#FBF7F2;color:#2B2522;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
+form{width:min(92vw,380px);background:#fff;border:1px solid #EDE5DC;border-radius:20px;padding:28px 24px;display:grid;gap:14px;box-shadow:0 8px 30px rgba(43,37,34,.06)}
+h1{margin:0;font-size:20px}p{margin:0;font-size:14px;color:#6b625b;line-height:1.7}
+input{font:inherit;font-size:16px;padding:12px 14px;border:1px solid #D9CDC1;border-radius:12px}
+button{font:inherit;font-weight:700;padding:13px;border:0;border-radius:999px;background:#E9785F;color:#fff}
+.err{color:#D2504B;font-weight:600}
+</style></head><body>
+<form method="post" action="/login">
+<h1>ミナト（1on1見守りAI）</h1>
+<p>合言葉を入力してください。</p>
+{{MSG}}
+<input type="password" name="password" autocomplete="current-password" autofocus required aria-label="合言葉">
+<button type="submit">開く</button>
+</form></body></html>"""
+_login_fails: dict = {}  # IPごとの失敗回数（総当たり対策。再起動で消える）
+
+
+def _login_page(msg: str = "", status: int = 200):
+    return HTMLResponse(LOGIN_HTML.replace("{{MSG}}", f'<p class="err">{msg}</p>' if msg else ""), status_code=status)
+
+
+@app.get("/login")
+def login_page():
+    if not LocalOnly.PASSWORD:
+        return RedirectResponse("/", status_code=303)
+    return _login_page()
+
+
+@app.post("/login")
+async def login(request: Request):
+    if not LocalOnly.PASSWORD:
+        return RedirectResponse("/", status_code=303)
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")
+    now = time.monotonic()
+    count, first = _login_fails.get(ip, (0, now))
+    if now - first > 600:
+        count, first = 0, now
+    if count >= 8:
+        return _login_page("失敗が続いたため、しばらくしてからやり直してください。", 429)
+    form = parse_qs((await request.body()).decode("utf-8", "ignore"))
+    given = (form.get("password") or [""])[0]
+    if hmac.compare_digest(given.encode(), LocalOnly.PASSWORD.encode()):
+        _login_fails.pop(ip, None)
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(LocalOnly.COOKIE, LocalOnly.token(), max_age=30 * 86400, httponly=True, samesite="lax", secure=LocalOnly.PUBLIC_MODE)
+        return resp
+    _login_fails[ip] = (count + 1, first)
+    return _login_page("合言葉が違います。", 401)
 
 
 zoom_bridge.setup(load_config)
