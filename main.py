@@ -35,6 +35,13 @@ class LocalOnly:
     """このPCからのアクセスだけを通す（Zoomの署名つきWebhookを除く）。
     ngrok等で公開しても、設定・発言の配信・判定には外から届かないようにする"""
     ALLOWED = {"127.0.0.1", "localhost", "::1"}
+    # GitHub Codespaces など、転送用のホスト名を使う環境でだけ、環境変数で追加を許可する（既定は空）。
+    # 例：ALLOWED_HOST_SUFFIXES=".app.github.dev"（先頭のドットが必要）
+    SUFFIXES = tuple(x.strip() for x in os.environ.get("ALLOWED_HOST_SUFFIXES", "").split(",") if x.strip().startswith("."))
+
+    @classmethod
+    def host_ok(cls, name):
+        return name in cls.ALLOWED or bool(name and cls.SUFFIXES and name.endswith(cls.SUFFIXES))
 
     def __init__(self, inner):
         self.inner = inner
@@ -44,8 +51,8 @@ class LocalOnly:
             headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
             host = urlparse("//" + headers.get("host", "")).hostname
             origin = headers.get("origin")
-            origin_ok = origin is None or urlparse(origin).hostname in self.ALLOWED
-            if host not in self.ALLOWED or not origin_ok:
+            origin_ok = origin is None or self.host_ok(urlparse(origin).hostname)
+            if not self.host_ok(host) or not origin_ok:
                 await JSONResponse({"error": "forbidden"}, status_code=403)(scope, receive, send)
                 return
         await self.inner(scope, receive, send)

@@ -159,6 +159,15 @@ python3 -m uvicorn main:app --host 127.0.0.1 --port 8001
 
 Chrome で `http://127.0.0.1:8001` を開きます。サーバーは、このPCからのアクセスだけを受け付けます。
 
+### GitHub Codespaces で動かす（インストール不要）
+
+リポジトリのページで **Code → Codespaces → Create codespace on main** を押します。準備と起動は自動です。右下に転送ポート8001が出たら、**Chromeで開いて**ください（マイクの許可を求められます）。
+
+- ポート8001は、既定で**あなただけが開ける（Private）**設定のままにしてください。公開に変えると、他の人もアプリにアクセスできます
+- アクセス制限を、Codespacesのホスト名（`.app.github.dev`）に限って緩めています（`.devcontainer/devcontainer.json` の `ALLOWED_HOST_SUFFIXES`）。手元で動かす場合は、従来どおりこのPCからのアクセスだけです
+- 使い終わったCodespaceは、削除または停止してください（無料枠を使います）
+- 音声認識はChromeのWeb Speech APIで、音声は外部へ送られます
+
 - **Claude判定（任意）**：`.env` に `ANTHROPIC_API_KEY=...` を書き、設定画面でオンにしたときだけ使います。既定はオフで、キーが無くても動きます
 - **音声エンジン（任意）**：[VOICEVOX](https://github.com/VOICEVOX/voicevox_engine) を `http://127.0.0.1:50021` で起動すると、その声を使います。無ければブラウザの声を使います
 - **マイクなしで試す**：面談画面の「デモ会話を再生」と、テキスト入力で動作を確認できます
