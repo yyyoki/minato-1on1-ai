@@ -22,6 +22,7 @@
   --type-perfectionist: #E9785F;
   --type-logical: #5B6CD9;
   --type-sensitive: #C46BAE;
+  --type-independent: #2E9C8F;
 
   /* 話者の色（色だけに頼らず、位置・名札・文字でも区別する） */
   --boss: #3F4B7C;
@@ -704,6 +705,62 @@ select { font: inherit; color: inherit; }
 .try-result[data-speaker="subordinate"] { color: var(--sub); }
 .privacy-hint { margin-top: -10px; }
 
+/* ---------- 面談のかたち ---------- */
+.segmented.two { grid-template-columns: 1fr 1fr; }
+.form-card { display: flex; flex-direction: column; gap: 14px; }
+.form-card .card-title { margin-bottom: 0; }
+.form-body { display: flex; flex-direction: column; gap: 12px; padding-top: 2px; }
+.form-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.form-label { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.pill-choice { display: inline-flex; gap: 2px; background: var(--surface-2); border-radius: 999px; padding: 4px; }
+.pill-choice button {
+  border: none; background: none; border-radius: 999px;
+  padding: 6px 14px; font-size: 13px; font-weight: 700; color: var(--ink-2);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.pill-choice button.is-active { background: #fff; box-shadow: var(--shadow-1); color: var(--ink); }
+.form-card #btnShare { --c: var(--calm); }
+.share-status { font-size: 13px; font-weight: 700; color: var(--muted); }
+.share-status[data-ok="true"] { color: var(--ok); }
+.share-status[data-ok="true"]::before { content: "● "; }
+.share-steps { margin: 0 0 0 20px; font-size: 13px; color: var(--ink-2); line-height: 1.8; }
+.enroll-details > summary { cursor: pointer; font-weight: 700; font-size: 14px; color: var(--ink-2); list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.enroll-details > summary::-webkit-details-marker { display: none; }
+.enroll-details > summary::after { content: "＋"; color: var(--muted); font-weight: 400; }
+.enroll-details[open] > summary::after { content: "－"; }
+.enroll-inner { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+.voice-row { padding-top: 14px; padding-bottom: 14px; }
+.stage-url-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- 面談の準備：状況・伝えたいこと ---------- */
+.segmented.four { grid-template-columns: repeat(4, 1fr); }
+.intent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.intent-grid .field:first-child { grid-row: span 2; }
+.intent-grid textarea { resize: vertical; min-height: 92px; }
+.field em { font-style: normal; font-weight: 600; font-size: 11px; color: var(--muted); margin-left: 6px; }
+.field em.em-share { color: var(--primary); }
+.respondent-card { display: flex; flex-direction: column; gap: 12px; }
+.confidence { margin-top: 12px; font-size: 13px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--ok-soft); color: #23704D; }
+.confidence[data-level="medium"] { background: var(--calm-soft); color: #3A4690; }
+.confidence[data-level="low"] { background: var(--warn-soft); color: #8A5A12; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.chip-select { padding: 0; }
+.chip-select select { font: inherit; font-size: 12px; font-weight: 700; color: var(--ink-2); background: var(--surface-2); border: none; border-radius: 999px; padding: 5px 10px; cursor: pointer; }
+.chip-voice { border: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; background: var(--primary-soft); color: var(--primary); }
+.chip-voice[data-on="false"] { background: var(--surface-2); color: var(--muted); }
+.goals-card { margin-top: 12px; background: var(--surface-2); border-radius: var(--radius); padding: 12px 16px; }
+.goals-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.goals-list li { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--ink-2); cursor: pointer; }
+.goals-list li::before { content: "○"; color: var(--muted); font-weight: 800; flex-shrink: 0; }
+.goals-list li.is-done { color: var(--ink); }
+.goals-list li.is-done::before { content: "●"; color: var(--ok); }
+.goals-take { margin-top: 8px; font-size: 12px; color: var(--primary); }
+.sm-goals { margin-top: 14px; }
+.sm-goals h4 { font-size: 14px; margin: 0; }
+.speech-intent { font-size: 12px; font-weight: 700; color: var(--calm); margin-bottom: 4px; }
+.stage-url { font-size: 14px; font-weight: 700; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px; word-break: break-all; color: var(--ink); }
+#stageLanNote code { font-size: 12px; word-break: break-all; }
+
 /* ---------- 面談：話者の切り替え ---------- */
 .speaker-mode { display: flex; align-items: center; gap: 2px; background: var(--surface-2); border-radius: 999px; padding: 4px; }
 .sm-label { font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 6px 0 10px; }
@@ -869,6 +926,11 @@ kbd { font-family: inherit; font-size: 10px; color: var(--muted); border: 1px so
 .person[data-mood="tense"][data-type="sensitive"] .p-body { scale: .94; animation: shiver .14s linear infinite; }
 .person[data-mood="tense"][data-type="sensitive"] .p-eyes { transform: translateY(1px) scale(.82); }
 .person[data-mood="tense"][data-type="sensitive"] .p-shiver { opacity: 1; }
+.person[data-mood="tense"][data-type="independent"] .p-brows-worry { opacity: 0; }
+.person[data-mood="tense"][data-type="independent"] .p-brows-furrow { opacity: 1; }
+.person[data-mood="tense"][data-type="independent"] .p-mouth-wavy { opacity: 0; }
+.person[data-mood="tense"][data-type="independent"] .p-mouth-flat { opacity: 1; }
+.person[data-mood="tense"][data-type="independent"] .p-head { rotate: -7deg; translate: -4px 0; }
 @keyframes sweat { 0% { transform: translateY(-4px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(8px); opacity: 0; } }
 @keyframes q-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes shiver { 0%, 100% { translate: -1px 0; } 50% { translate: 1px 0; } }
@@ -952,6 +1014,10 @@ kbd { font-family: inherit; font-size: 10px; color: var(--muted); border: 1px so
   .meeting-bar { padding: 10px 12px; }
   .btn-lg { padding: 13px 22px; }
   .enroll-grid { grid-template-columns: 1fr; }
+  .segmented.two { grid-template-columns: 1fr; }
+  .segmented.four { grid-template-columns: 1fr 1fr; }
+  .intent-grid { grid-template-columns: 1fr; }
+  .intent-grid .field:first-child { grid-row: auto; }
   .read-text { font-size: 17px; }
   .speaker-mode { width: 100%; justify-content: space-between; }
   .speaker-mode kbd { display: none; }

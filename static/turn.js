@@ -15,6 +15,7 @@
     speculateSilenceMs: 250,
     speculateMinChars: 6,
     playStartTimeoutMs: 1500, // 合成・再生がこれより遅れたら、声を諦める
+    remoteStartScale: 3,      // ミナト用PC（Wi-Fi越し）で話すときは、話し出しの待ちを長くする
     maxPlayMs: 20000,
     echoLearnMs: 400,
     echoMargin: 2.5,
@@ -81,6 +82,7 @@
     let pace = PACES[options.pace] || PACES.normal;
     let textOnly = !!options.textOnly;
     let voiceOff = false;
+    let remoteVoice = false;     // ミナト用PCで話す（出力音量が測れず、話し出しが遅れる）
     let startedAt = options.t0 || 0;
 
     let state = "LISTEN";
@@ -210,7 +212,7 @@
 
     function checkSpeaking(t) {
       if (state !== "SPEAKING") return;
-      if (sp.playAt == null && t - sp.askedAt > T.playStartTimeoutMs) return stopSpeaking(t, "late", false);
+      if (sp.playAt == null && t - sp.askedAt > T.playStartTimeoutMs * (remoteVoice ? T.remoteStartScale : 1)) return stopSpeaking(t, "late", false);
       if (sp.playAt != null && t - sp.playAt > T.maxPlayMs) return stopSpeaking(t, "too_long", false);
     }
 
@@ -226,6 +228,7 @@
         if (ev.pace && PACES[ev.pace]) pace = PACES[ev.pace];
         if (ev.textOnly != null) textOnly = ev.textOnly;
         if (ev.voiceOff != null) voiceOff = ev.voiceOff;
+        if (ev.remoteVoice != null) remoteVoice = ev.remoteVoice;
       },
       start(ev) { startedAt = ev.t; },
       frame(ev) {

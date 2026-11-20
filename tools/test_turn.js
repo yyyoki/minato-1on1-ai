@@ -355,6 +355,24 @@ test("句末の分類", () => {
   const t = { "なんで相談しなかったの": "question", "どう思いますか": "question", "全然できてないじゃん": "complete", "それは違うと思います": "complete", "分かるんだけど": "trailing", "遅れたので": "trailing", "もっとちゃんとやって": "trailing", "資料": "unknown", "なんで相談しなかったのとか": "trailing", "それでなんか": "trailing", "ええと、あの": "trailing", "その": "trailing", "部長の": "trailing", "全然できてないじゃん、お客さんの": "trailing", "田中さんの": "trailing", "みんなの": "trailing", "あなたの": "trailing", "そうなの": "question" };
   for (const [k, v] of Object.entries(t)) ok(classifyTail(k) === v, `${k} → ${classifyTail(k)}（期待 ${v}）`);
 });
+test("ミナト用PCで話すときは、話し出しの遅れを長めに待つ", () => {
+  // 普段は1.5秒で諦めるが、ミナト用PC（Wi-Fi越しの合成・再生）では2.5秒遅れても話す
+  const local = run(speaking().quiet(3400, 9000), { playAfter: 2500, playMs: 2000 });
+  ok(local.has("stop", (a) => a.why === "late"), "このPCで話すときに、遅れても諦めなかった");
+  const remote = run(speaking().add(0, "mode", { remoteVoice: true }).quiet(3400, 9000), { playAfter: 2500, playMs: 2000 });
+  ok(!remote.has("stop") && remote.has("done"), "ミナト用PCで話すときに、2.5秒の遅れで諦めた");
+  const tooLate = run(speaking().add(0, "mode", { remoteVoice: true }).quiet(3400, 12000), { playAfter: 5000, playMs: 2000 });
+  ok(tooLate.has("stop", (a) => a.why === "late"), "ミナト用PCでも、遅れすぎたら諦める");
+});
+test("ミナト用PCの声（音量が測れない）は、音だけでは止まらない", () => {
+  const s = speaking().add(0, "mode", { remoteVoice: true });
+  s.add(3550, "playStart", { speakId: 1, levelOk: false });
+  for (let t = 3600; t < 6000; t += 40) s.add(t, "frame", { speech: true, rms: 1, ref: null });
+  s.add(6100, "playEnd", { speakId: 1 });
+  const r = run(s);
+  ok(!r.has("stop"), "会議から戻ってきた音で止まった");
+  ok(r.has("done"), "最後まで話していない");
+});
 test("エコー判定と文分割", () => {
   ok(isEchoText("経緯を知りたい", LINE), "自分の声を見逃した");
   ok(!isEchoText("今の言い方はちょっと", LINE), "別の発言をエコー扱いした");

@@ -15,15 +15,21 @@
     },
     "logical": {
       "label": "論理重視タイプ",
-      "traits": "",
-      "landmines": "",
-      "meta_triggers": ""
+      "traits": "理由や根拠に納得してから動きたい。事実やデータで話すと受け取りやすい",
+      "landmines": "「普通はこうする」「いいからやって」など根拠のない指示・感情的な言い方 → 反発するか、黙って壁を作る",
+      "meta_triggers": "目的と理由を先に伝え、「どこが曖昧だったか」を一緒に確認する"
     },
     "sensitive": {
       "label": "感情繊細タイプ",
       "traits": "繊細でプレッシャーに弱い。周囲の空気や声のトーンに敏感",
       "landmines": "強い口調、ため息、沈黙 → 「怒られている」「見放された」と感じてフリーズする",
       "meta_triggers": "まず気持ちを受け止めてから「一番困ったのはどの場面でしたか」と具体化する"
+    },
+    "independent": {
+      "label": "自立・主導タイプ",
+      "traits": "自分で考えて決めたい。任されると力を発揮するが、細かい指示や口出しを嫌う",
+      "landmines": "「普通はこうする」「言われた通りにやって」→ 信頼されていない・やり方を否定されたと受け取る",
+      "meta_triggers": "目的と期限だけを共有し、やり方は本人に選んでもらう。「どう進めるのがいいと思う？」と聞く"
     }
   },
   "active_preset": "perfectionist",
@@ -48,5 +54,13 @@
     "boss_name": "",
     "subordinate_name": "",
     "ignore_names": ""
+  },
+  "audio": {
+    "form": "inperson",
+    "local_role": "boss",
+    "voice_out": "local",
+    "stage_tip": true,
+    "voice_on": true,
+    "situation": "progress"
   }
 }

@@ -5,3 +5,4 @@ logs/
 config.json
 .DS_Store
 .venv/
+.stage_key

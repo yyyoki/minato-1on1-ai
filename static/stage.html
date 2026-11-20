@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミナト｜ステージ</title>
+<link rel="stylesheet" href="/static/style.css?v=15">
+<style>
+  html, body { height: 100%; }
+  body.stage-body {
+    margin: 0; overflow: hidden;
+    background: radial-gradient(120% 90% at 30% 40%, #FFF8EF 0%, #FBEFE2 55%, #F4E3D2 100%);
+    color: var(--ink); font-family: var(--font);
+  }
+  body.stage-body.hide-cursor { cursor: none; }
+  .stage-wrap {
+    height: 100%; box-sizing: border-box; padding: 4vh 5vw;
+    display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: center; gap: 3vw;
+  }
+  .stage-figure { display: flex; flex-direction: column; align-items: center; gap: 1.6vh; }
+  .stage-char { width: min(58vh, 38vw); }
+  .stage-char svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .stage-name {
+    display: inline-flex; align-items: baseline; gap: .6em; padding: .45em 1.2em; border-radius: 999px;
+    background: #fff; box-shadow: var(--shadow-1); font-family: var(--font-round); font-weight: 800;
+    font-size: clamp(16px, 2.6vh, 28px); color: var(--primary);
+  }
+  .stage-name small { font-size: .62em; color: var(--muted); font-weight: 700; }
+  .stage-talk { display: flex; flex-direction: column; gap: 2.4vh; min-width: 0; }
+  .stage-bubble {
+    position: relative; background: #fff; border-radius: 28px; padding: 3.2vh 2.4vw;
+    box-shadow: 0 18px 50px rgba(70, 45, 25, .12); border: 2px solid #F5D9CF;
+    transition: opacity .6s ease, transform .4s ease;
+  }
+  .stage-bubble::before {
+    content: ""; position: absolute; left: -16px; top: 40%; width: 28px; height: 28px; background: #fff;
+    border-left: 2px solid #F5D9CF; border-bottom: 2px solid #F5D9CF; transform: rotate(45deg); border-radius: 0 0 0 6px;
+  }
+  .stage-bubble.is-empty .stage-text { color: var(--muted); font-weight: 600; }
+  .stage-bubble.is-old { opacity: .45; }
+  .stage-bubble.pop { animation: stagePop .45s ease; }
+  @keyframes stagePop { 0% { transform: scale(.96); opacity: .4; } 100% { transform: none; opacity: 1; } }
+  .stage-cushion { font-family: var(--font-round); font-weight: 800; color: var(--primary); font-size: clamp(16px, 2.8vh, 30px); margin-bottom: .4em; }
+  .stage-text { font-family: var(--font-round); font-weight: 800; line-height: 1.6; font-size: clamp(22px, 4.6vh, 52px); }
+  .stage-tip {
+    background: var(--calm-soft); border-radius: 20px; padding: 2vh 1.8vw; color: #3A4690;
+    font-size: clamp(14px, 2.4vh, 26px); line-height: 1.7; transition: opacity .6s ease;
+  }
+  .stage-tip b { display: block; font-family: var(--font-round); font-size: .85em; margin-bottom: .2em; color: var(--calm); }
+  .stage-tip.is-old { opacity: .45; }
+  .stage-intent {
+    align-self: flex-start; background: #fff; border-radius: 999px; padding: .5em 1.1em; box-shadow: var(--shadow-1);
+    font-family: var(--font-round); font-weight: 800; color: var(--calm); font-size: clamp(14px, 2.4vh, 26px); transition: opacity .6s ease;
+  }
+  .stage-intent.is-old { opacity: .45; }
+  .stage-label { font-family: var(--font-round); font-weight: 800; color: var(--ok); font-size: clamp(14px, 2.4vh, 26px); margin-bottom: .3em; }
+  .stage-conn {
+    position: fixed; top: 14px; right: 16px; display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700; color: var(--muted); background: rgba(255,255,255,.7); padding: 6px 10px; border-radius: 999px;
+  }
+  .stage-conn i { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
+  .stage-conn[data-ok="true"] i { background: var(--ok); }
+  .stage-conn[data-ok="true"] span { display: none; }
+  .stage-overlay {
+    position: fixed; inset: 0; display: grid; place-items: center; background: rgba(251, 247, 242, .92); z-index: 10; padding: 16px;
+  }
+  .stage-start {
+    width: min(560px, 100%); background: #fff; border-radius: 24px; padding: 28px 26px; box-shadow: var(--shadow-2);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .stage-start h1 { margin: 0; font-family: var(--font-round); font-size: 22px; }
+  .stage-start p, .stage-start li { font-size: 14px; color: var(--ink-2); line-height: 1.75; margin: 0; }
+  .stage-start ol { margin: 0 0 0 20px; }
+  .stage-help { position: fixed; bottom: 12px; right: 16px; font-size: 12px; color: var(--muted); transition: opacity .4s; }
+  body.hide-cursor .stage-help { opacity: 0; }
+  @media (max-aspect-ratio: 1/1) {
+    .stage-wrap { grid-template-columns: 1fr; grid-template-rows: auto 1fr; align-content: center; }
+    .stage-char { width: min(38vh, 62vw); }
+    .stage-bubble::before { left: 50%; top: -16px; transform: translateX(-50%) rotate(135deg); }
+  }
+</style>
+</head>
+<body class="stage-body">
+  <main class="stage-wrap">
+    <div class="stage-figure">
+      <div class="stage-char" id="stageChar"></div>
+      <div class="stage-name">ミナト<small>見守りAI</small></div>
+    </div>
+    <div class="stage-talk">
+      <div class="stage-intent" id="stageIntent" hidden></div>
+      <div class="stage-bubble is-empty" id="stageBubble" aria-live="polite">
+        <div class="stage-label" id="stageLabel" hidden></div>
+        <div class="stage-cushion" id="stageCushion"></div>
+        <div class="stage-text" id="stageText">そっと見守っています。</div>
+      </div>
+      <div class="stage-tip" id="stageTip" hidden><b>上司さんへ</b><span id="stageTipText"></span></div>
+    </div>
+  </main>
+
+  <div class="stage-conn" id="stageConn" data-ok="false" aria-live="polite"><i></i><span>上司のPCとつながっていません</span></div>
+  <p class="stage-help">T：テスト再生　F：全画面</p>
+
+  <div class="stage-overlay" id="stageOverlay">
+    <div class="stage-start">
+      <h1>ミナト用の画面です</h1>
+      <p>このパソコンを「ミナト」として会議に参加させます。ブラウザは一度クリックしないと音を出せないため、最初に「開始する」を押してください。</p>
+      <ol>
+        <li>このパソコンの音の出力を <b>BlackHole</b>（仮想マイク）にする</li>
+        <li>会議アプリのマイクを <b>BlackHole</b>、スピーカーを内蔵スピーカーにする</li>
+        <li>この画面を、画面共有か仮想カメラで会議に映す</li>
+      </ol>
+      <p>くわしくは「ミナト用PC_設定手順.md」を見てください。</p>
+      <button class="btn btn-primary btn-lg" id="btnStageStart" type="button">開始する（音を出せるようにする）</button>
+    </div>
+  </div>
+
+<script src="/static/mofu.js?v=12"></script>
+<script src="/static/audio.js?v=15"></script>
+<script src="/static/stage.js?v=2"></script>
+</body>
+</html>

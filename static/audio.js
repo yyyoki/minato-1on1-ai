@@ -2,45 +2,85 @@
 
 // ---------- マイク：声の特徴だけを取り続ける（話者判定・声の登録・音量表示用） ----------
 // 録音データは持たない。保持するのは直近30秒ぶんの特徴量（数値）だけ。
+// マイクはこの1本だけを開き、音声認識にも同じ音を渡す（会議アプリと取り合わないため）。
+// オンライン会議では「会議の音」（タブやシステムの音声）も受け取り、相手が話している時間を数える。
 const Mic = (() => {
-  let ctx = null, stream = null, analyser = null, timer = null, buf = null, vad = null;
+  // 自動音量調整を切る：オンだとChromeがPC全体のマイク音量を書き換え、会議アプリの声まで小さくなる
+  const CONSTRAINTS = { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
+  const REMOTE_HOLD_MS = 250;   // 会議の音が止んでからこの間は、マイク側を自分の声として数えない（スピーカーの回り込み対策）
+  let ctx = null, stream = null, analyser = null, timer = null, buf = null, vad = null, localGain = null, localSrc = null;
+  let remote = null;            // { stream, src, analyser, buf, vad, dest, lastSpeech, level }
   let muted = false, muteUntil = 0, level = 0;
+  let remoteSuppressed = false, suppressUntil = 0; // ミナト用PCの声が会議の音として戻ってくる間
   const frames = [];
+  const remoteTimes = [];       // 相手が話していたフレームの時刻だけ
   const listeners = new Set();
+  const endListeners = new Set();
 
   async function start() {
     if (stream) return;
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: CONSTRAINTS });
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = ctx.createMediaStreamSource(stream);
+    localSrc = ctx.createMediaStreamSource(stream);
     analyser = ctx.createAnalyser();
     analyser.fftSize = VoicePrint.N;
     analyser.smoothingTimeConstant = 0;
-    src.connect(analyser);
+    localSrc.connect(analyser);
     buf = new Float32Array(analyser.fftSize);
     vad = VoicePrint.createVad();
     timer = setInterval(tick, 40);
   }
 
+  function rmsOf(an, b) {
+    an.getFloatTimeDomainData(b);
+    let sum = 0;
+    for (let i = 0; i < b.length; i++) sum += b[i] * b[i];
+    return Math.sqrt(sum / b.length);
+  }
+
   function tick() {
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    analyser.getFloatTimeDomainData(buf);
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-    const rms = Math.sqrt(sum / buf.length);
     const now = performance.now();
+    let remoteSpeech = false;
+    if (remote) {
+      // ミナトの声は会議の音に入らないので、話している間も相手の声は数える
+      const r = rmsOf(remote.analyser, remote.buf);
+      const heard = remote.vad(r);
+      remote.level = remote.level * 0.55 + Math.min(1, r * 14) * 0.45;
+      if (heard) remote.lastSpeech = now;   // マイク側の回り込み対策には、ミナトの声も含めて使う
+      // ミナト用PCの声は相手の声として数えない
+      remoteSpeech = heard && !(remoteSuppressed || now < suppressUntil);
+      if (remoteSpeech) remoteTimes.push(now);
+      // 相手が話している間は、音声認識に渡すマイクの音を下げる（回り込んだ相手の声が二重に入らないように）
+      localGain.gain.setTargetAtTime(now - remote.lastSpeech < REMOTE_HOLD_MS ? 0.15 : 1, ctx.currentTime, 0.03);
+    }
+    const rms = rmsOf(analyser, buf);
     const ignored = muted || now < muteUntil;
-    const speech = !ignored && vad(rms); // ミナトの声で雑音レベルの学習が狂わないようにする
+    const remoteRecent = remote && now - remote.lastSpeech < REMOTE_HOLD_MS;
+    const speech = !ignored && vad(rms) && !remoteRecent; // ミナトの声で雑音レベルの学習が狂わないようにする
     level = level * 0.55 + Math.min(1, rms * 14) * 0.45;
     if (speech) {
       const f = VoicePrint.frameFeatures(buf, ctx.sampleRate);
       frames.push({ t: now, f0: f.f0, clarity: f.clarity, bands: f.bands });
     }
     while (frames.length && now - frames[0].t > 30000) frames.shift();
-    const ev = { level: ignored ? 0 : level, speech, rms, t: now };
+    while (remoteTimes.length && now - remoteTimes[0] > 30000) remoteTimes.shift();
+    const ev = { level: ignored ? 0 : level, speech, rms, t: now, remoteSpeech, remoteLevel: remote ? remote.level : 0 };
     listeners.forEach((fn) => fn(ev));
+  }
+
+  function detachRemote(why) {
+    if (!remote) return;
+    const r = remote;
+    remote = null;
+    try { r.src.disconnect(); } catch (e) { /* 切断済み */ }
+    r.stream.getTracks().forEach((t) => t.stop());
+    if (localGain) {
+      try { localGain.disconnect(); } catch (e) { /* 切断済み */ }
+      localGain.gain.value = 1;
+    }
+    remoteTimes.length = 0;
+    endListeners.forEach((fn) => fn(why || "stopped"));
   }
 
   return {
@@ -50,21 +90,73 @@ const Mic = (() => {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
-    // (t0, t1] の間に話していたフレーム
+    // (t0, t1] の間に話していたフレーム（このPCのマイク）
     framesBetween(t0, t1 = performance.now()) {
       return frames.filter((f) => f.t > t0 && f.t <= t1);
     },
+    // (t0, t1] の間に、マイク側と会議の音側で声がしていたフレーム数
+    voicedBetween(t0, t1 = performance.now()) {
+      return {
+        local: frames.filter((f) => f.t > t0 && f.t <= t1).length,
+        remote: remoteTimes.filter((t) => t > t0 && t <= t1).length,
+      };
+    },
     lastSpeechAt: () => (frames.length ? frames[frames.length - 1].t : 0),
+    // 会議の音（getDisplayMedia で共有されたタブ・画面の音声）をつなぐ。音声が含まれていなければ false
+    attachRemote(displayStream) {
+      const track = displayStream.getAudioTracks()[0];
+      if (!stream || !track) {
+        displayStream.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      detachRemote("replaced");
+      const audioOnly = new MediaStream([track]);
+      const src = ctx.createMediaStreamSource(audioOnly);
+      const an = ctx.createAnalyser();
+      an.fftSize = 1024;
+      an.smoothingTimeConstant = 0;
+      src.connect(an);
+      // 音声認識へは「マイク＋会議の音」を混ぜて渡す
+      const dest = ctx.createMediaStreamDestination();
+      if (!localGain) {
+        localGain = ctx.createGain();
+        localSrc.connect(localGain);
+      }
+      localGain.connect(dest);
+      src.connect(dest);
+      remote = { stream: displayStream, src, analyser: an, buf: new Float32Array(an.fftSize), vad: VoicePrint.createVad(), dest, lastSpeech: -1e9, level: 0 };
+      // 映像は使わない。共有をやめる操作（ブラウザの「共有を停止」）で音声も止まったら知らせる
+      track.addEventListener("ended", () => detachRemote("ended"));
+      displayStream.getVideoTracks().forEach((t) => t.addEventListener("ended", () => detachRemote("ended")));
+      return true;
+    },
+    detachRemote,
+    hasRemote: () => !!remote,
+    onRemoteEnded(fn) {
+      endListeners.add(fn);
+      return () => endListeners.delete(fn);
+    },
+    // 音声認識に渡す音。会議の音があれば混ぜたもの、なければマイクそのもの
+    recognitionTrack() {
+      if (remote) return remote.dest.stream.getAudioTracks()[0] || null;
+      return stream ? stream.getAudioTracks()[0] || null : null;
+    },
+    // ミナト用PCが話している間と、その少し後（会議の遅れ）は、会議の音を相手の声として数えない
+    suppressRemote(on) {
+      remoteSuppressed = on;
+      if (!on) suppressUntil = performance.now() + 1500;
+    },
     // ミナトや合成音声が話している間は拾わない（スピーカーの音を人の声と取り違えないため）
     mute(on) {
       muted = on;
       if (!on) muteUntil = performance.now() + 400;
     },
     stop() {
+      detachRemote("mic_stopped");
       clearInterval(timer);
       if (stream) stream.getTracks().forEach((t) => t.stop());
       if (ctx) ctx.close().catch(() => {});
-      stream = ctx = analyser = null;
+      stream = ctx = analyser = localGain = localSrc = null;
       frames.length = 0;
     },
   };

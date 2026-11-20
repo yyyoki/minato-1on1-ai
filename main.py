@@ -20,6 +20,7 @@ from pydantic import BaseModel
 import anthropic
 import requests
 
+import stage_bridge
 import zoom_bridge
 
 # .env ファイルからAPIキーを読み込む
@@ -74,12 +75,47 @@ class LocalOnly:
     def host_ok(cls, name):
         return name in cls.ALLOWED or bool(name and cls.SUFFIXES and name.endswith(cls.SUFFIXES))
 
+    # ミナト用PC（同じWi-Fiの別のパソコン）から開いてよいもの。STAGE_LAN=1 で起動したときだけ
+    STAGE_PATHS = {"/stage", "/stage/events", "/stage/report",
+                   "/static/stage.js", "/static/mofu.js", "/static/audio.js", "/static/style.css", "/tts", "/tts/status"}
+    LOOPBACK = {"127.0.0.1", "::1"}
+    _stage_fails: dict = {}
+
+    @classmethod
+    def stage_ok(cls, scope, headers, peer):
+        """ほかのPCからの接続：合言葉（またはその後のCookie）があり、ステージ画面の部品だけなら通す"""
+        if scope["path"] not in cls.STAGE_PATHS:
+            return 403
+        now = time.monotonic()
+        count, first = cls._stage_fails.get(peer, (0, now))
+        if now - first > 600:
+            count, first = 0, now
+        if count >= 10:
+            return 429
+        given = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("key", [None])[0]
+        if not (stage_bridge.key_ok(given) or stage_bridge.cookie_ok(headers.get("cookie"))):
+            cls._stage_fails[peer] = (count + 1, first)
+            return 403
+        origin = headers.get("origin")
+        if scope["method"] != "GET" and origin is not None and urlparse(origin).netloc != headers.get("host", ""):
+            return 403
+        return 0
+
     def __init__(self, inner):
         self.inner = inner
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and scope["path"] != "/zoom/webhook":
             headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+            # STAGE_LAN=1 のとき、このPC以外から届いた接続は、名乗り（Host）ではなく送り元で見分ける
+            peer = (scope.get("client") or ("", 0))[0]
+            if stage_bridge.lan_enabled() and peer not in self.LOOPBACK:
+                code = self.stage_ok(scope, headers, peer)
+                if code:
+                    await JSONResponse({"error": "forbidden" if code == 403 else "too many attempts"}, status_code=code)(scope, receive, send)
+                    return
+                await self.inner(scope, receive, send)
+                return
             host = urlparse("//" + headers.get("host", "")).hostname
             origin = headers.get("origin")
             origin_ok = origin is None or self.host_ok(urlparse(origin).hostname)
@@ -116,6 +152,9 @@ CLAUDE_TIMEOUT_SEC = float(os.environ.get("CLAUDE_TIMEOUT_SEC", "2.5"))
 judge_pool = ThreadPoolExecutor(max_workers=4)
 judge_cache: dict = {}   # 途中文の先行判定を、確定した発言で再利用する（30秒だけ保持。ログには残さない）
 judge_cache_lock = threading.Lock()
+
+# その面談の間だけ置く情報（状況・上司が事前に伝えたいこと）。設定ファイルには保存しない
+session_meta: dict = {"situation": "progress", "intent": {}}
 
 session_log = {
     "started_at": None,
@@ -165,9 +204,45 @@ class AnalyzeRequest(BaseModel):
     speculative: bool = False                 # 話し終わりの気配で途中文を先に判定する（記録しない）
 
 
+DEFAULT_PRESETS = {
+    "perfectionist": {
+        "label": "完璧主義・自責タイプ",
+        "traits": "完璧主義で自責しやすい。失敗を自分の能力不足と捉える傾向がある",
+        "landmines": "「なぜできなかったのか」「もっと早く相談すべきだった」→ 無能感・存在否定と受け取る",
+        "meta_triggers": "具体的な行動ステップを提示すると冷静になれる。「次はどの時点で相談するか」という基準の話に持ち込む",
+    },
+    "logical": {
+        "label": "論理重視タイプ",
+        "traits": "理由や根拠に納得してから動きたい。事実やデータで話すと受け取りやすい",
+        "landmines": "「普通はこうする」「いいからやって」など根拠のない指示・感情的な言い方 → 反発するか、黙って壁を作る",
+        "meta_triggers": "目的と理由を先に伝え、「どこが曖昧だったか」を一緒に確認する",
+    },
+    "sensitive": {
+        "label": "感情繊細タイプ",
+        "traits": "繊細でプレッシャーに弱い。周囲の空気や声のトーンに敏感",
+        "landmines": "強い口調、ため息、沈黙 → 「怒られている」「見放された」と感じてフリーズする",
+        "meta_triggers": "まず気持ちを受け止めてから「一番困ったのはどの場面でしたか」と具体化する",
+    },
+    "independent": {
+        "label": "自立・主導タイプ",
+        "traits": "自分で考えて決めたい。任されると力を発揮するが、細かい指示や口出しを嫌う",
+        "landmines": "「普通はこうする」「言われた通りにやって」→ 信頼されていない・やり方を否定されたと受け取る",
+        "meta_triggers": "目的と期限だけを共有し、やり方は本人に選んでもらう。「どう進めるのがいいと思う？」と聞く",
+    },
+}
+
+
 def load_config() -> dict:
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+    # 4つ目のタイプの追加や、空欄のままのプロファイルを既定の文で補う（保存は画面から保存した時）
+    presets = config.setdefault("personality_presets", {})
+    for key, default in DEFAULT_PRESETS.items():
+        cur = presets.setdefault(key, {})
+        for field, text in default.items():
+            if not (cur.get(field) or "").strip():
+                cur[field] = text
+    return config
 
 
 def save_config(data: dict):
@@ -175,7 +250,30 @@ def save_config(data: dict):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def build_system_prompt(config: dict) -> str:
+def tendency_text(config: dict) -> str:
+    scores = (config.get("profile_analysis") or {}).get("scores") or {}
+    parts = [f"{DIM_LABELS[k]} {scores[k]}" for k in TYPE_KEYS if isinstance(scores.get(k), (int, float))]
+    return " / ".join(parts) if parts else "（未分析）"
+
+
+def meeting_text(meta: dict | None, config: dict) -> str:
+    meta = meta or {}
+    sit = SITUATIONS.get(meta.get("situation") or "", SITUATIONS["progress"])
+    lines = [f"【面談の状況】{sit['label']}：{sit['prompt']}"]
+    intent = meta.get("intent") or {}
+    goals = [mask_names(g, config) for g in intent.get("goals") or []]
+    if goals or intent.get("takeaway") or intent.get("outcome"):
+        lines.append("【上司が事前に伝えたいこと（上司の意図の推測にだけ使い、断定しない）】")
+        for g in goals:
+            lines.append(f"- 伝えたいこと: {g}")
+        if intent.get("takeaway"):
+            lines.append(f"- 部下に持ち帰ってほしいこと: {mask_names(intent['takeaway'], config)}")
+        if intent.get("outcome"):
+            lines.append(f"- 面談の後どうなってほしいか: {mask_names(intent['outcome'], config)}")
+    return "\n".join(lines)
+
+
+def build_system_prompt(config: dict, meta: dict | None = None) -> str:
     persona = config["character_persona"]
     active_key = config.get("active_preset", "perfectionist")
     personality = config["personality_presets"].get(active_key, {})
@@ -200,6 +298,9 @@ def build_system_prompt(config: dict) -> str:
 - 特性: {personality.get('traits', '')}
 - 受け取りやすい誤解: {personality.get('landmines', '')}
 - 落ち着いて考えやすい問い: {personality.get('meta_triggers', '')}
+- 受け止め方の傾向（0〜100）: {tendency_text(config)}
+
+{meeting_text(meta, config)}
 
 【介入感度】
 {sensitivity_desc.get(sensitivity, sensitivity_desc['medium'])}
@@ -211,12 +312,13 @@ def build_system_prompt(config: dict) -> str:
 
 【reframed_speech の書き方】
 - 部下に向けて話す。上司への助言や評価はしない
+- 上司の指摘の中身は消さない。部下が自分を否定せず、「起きたこと」と「自分の評価」を分けて受け取れるようにする
 - 「上司の意図の推測」＋「部下が自分の状況を客観視できる短い問い」の2文
 - 意図は断定せず「〜だと思います」「〜かもです」と言う
 - 38文字以内。呼びかけの言葉は付けない
 - 性格、タイプ、特性、傾向に関する言葉は使わない
 
-boss_tip には、上司だけが画面で読む言い換えの提案を60文字以内で書きます。介入しない場合、reframed_speech と boss_tip は空文字にします。"""
+boss_tip には、上司だけが画面で読む言い換えの提案を60文字以内で書きます。上司の事前に伝えたいことがある場合は、それが部下に届く言い方を提案します。介入しない場合、reframed_speech と boss_tip は空文字にします。"""
 
 
 VERDICT_SCHEMA = {
@@ -243,15 +345,41 @@ def mask_names(text: str, config: dict) -> str:
 
 ATTACK_PATTERNS = [
     {
+        "id": "personal_attack",
+        "label": "人格・能力の否定",
+        "patterns": [
+            r"使え(?:ない|ねー|ねえ)",
+            r"やる気(?:ある|あんの|あるの|ないの|ない(?:んだ|よね|でしょ|な)|が(?:見えない|感じられない|ない))",
+            r"向いて(?:い)?ない",
+            r"(?:考え|見通し|詰め|認識|読み)が甘い|甘すぎ|甘いよ|甘いね|甘いな",
+            r"言い訳(?:は|を)?(?:いい|するな|しないで|ばかり|ばっかり|は聞きたくない|しない)",
+            r"(?:社会人|大人|プロ)として(?:どう|ありえない|失格|おかしい|当たり前|当然|常識)",
+            r"(?:この程度|こんなこと|こんな簡単なこと)(?:も|すら)?(?:できない|わからない|分からない)",
+            r"(?:全然|まったく|何も|なにも)(?:わかって|分かって|理解して)(?:ない|いない)",
+            r"(?:センス|才能|能力)(?:が)?(?:ない|低い|足りない)",
+            r"(?:君|きみ|お前|おまえ|あなた)の(?:せい|責任)",
+            r"ありえない(?:でしょ|よ|ね|な|わ)?$",
+        ],
+        "safe_patterns": [
+            r"(?:ツール|システム|パソコン|PC|アプリ|機能|プリンター|会議室|回線|ネット|サーバー|ソフト)(?:が|は)?使え(?:ない|ねー)",
+            r"ありえない(?:くらい|ほど)",
+            r"向いて(?:い)?ない(?:と|って)(?:思って|感じて|悩)",
+            r"(?:僕|私|俺|わたし|ぼく|自分)の(?:せい|責任)",
+        ],
+        "score": 9,
+    },
+    {
         "id": "accusatory_why",
         "label": "追及型の「なぜ」",
         "patterns": [
             r"(?:なぜ|なんで|何で|何故).*(?:なかった|しなかった|できなかった|やらなかった|言わなかった|しない)",
             r"(?:なぜ|なんで|何で|何故).*(?:の\s*$|んだ|のか)",
             r"(?:どうして).*(?:なかった|しなかった|できなかった|くれない|しない)",
+            r"(?:どうして|なんで|なぜ|何で).*(?:こうなった|そうなった|こんなこと)",
         ],
         "safe_patterns": [
             r"(?:なぜ|なんで|何で).*(?:だと思|と思い|と考え|にした|になった|を選|ですか)",
+            r"(?:どうして|なぜ|なんで|何で).*(?:と思う|と思います|と考える|と思った)(?:の|か)?$",
             r"(?:なぜ|なんで|何で).*のか(?:が|を|は|も)(?:わから|知りたい|聞きたい|教えて)",
             r"(?:なぜ|なんで|何で).*(?:取り組|選ん|始め|やろう|考え).*(?:のか|んだろう)",
         ],
@@ -274,6 +402,7 @@ ATTACK_PATTERNS = [
             r"(?:いつまで|まだ).*(?:かか(?:る|って)|できない|できてない|終わらない|終わって|やって|やるの)",
             r"(?:遅い|遅すぎ|早く|急いで|いい加減).*(?:して|しろ|やれ|しなさい|にして)",
             r"いい加減にし",
+            r"遅すぎ(?:る|だ|でしょ|ない|よ|ね|$)",
         ],
         "safe_patterns": [],
         "score": 6,
@@ -286,6 +415,8 @@ ATTACK_PATTERNS = [
             r"(?:できてない|出来てない|できない|出来ない)(?:よ|ね|じゃん|でしょ|だろ)",
             r"(?:違う|間違|ミス).*(?:でしょ|だよ|だろ|じゃん|ってる)",
             r"全然(?:できて|なって|ダメ|だめ)",
+            r"(?:結果|成果|数字)(?:が|は)?(?:出て|上がって|ついてきて)(?:ない|いない)",
+            r"意味(?:ある|あるの|ない|なくない)(?:の|よ|でしょ|かな)?$",
         ],
         "safe_patterns": [
             r"(?:違う|間違).*(?:ですか|かな|かも)",
@@ -310,6 +441,8 @@ ATTACK_PATTERNS = [
             r"(?:ちゃんと|しっかり|きちんと).*(?:して|しろ|やれ|やって|考えて|しなさい)",
             r"(?:ちゃんと|しっかり|きちんと)(?:やれ|しろ|して)(?:よ|$)",
             r"もっと(?:ちゃんと|しっかり|きちんと)",
+            r"自分で考えて(?:よ|ね|くれ|ください)?$",
+            r"(?:少し|ちょっと)は(?:考えて|頭を使って)",
         ],
         "safe_patterns": [
             r"(?:ちゃんと|しっかり).*(?:できて|やれて|考えて)(?:いる|る|た)",
@@ -322,10 +455,11 @@ ATTACK_PATTERNS = [
         "patterns": [
             r"(?:期待).*(?:してた|していた|はずれ|外れ)",
             r"(?:がっかり|残念)(?:だ|です|した|だよ|だね)",
+            r"(?:もう)?任せられない",
             r"(?:責任|自覚|意識).*(?:ない|ある|足りない|持って|して)",
         ],
         "safe_patterns": [
-            r"期待(?:して|できる|できそう|したい)",
+            r"期待(?:してる|しています|してるよ|できる|できそう|したい)",
         ],
         "score": 7,
     },
@@ -361,45 +495,59 @@ CUSHION_PHRASES = ["あの、", "えっと、"]
 # ミナトが声で話すセリフ。部下に向けて「上司の意図の推測＋問い」を短く伝える。
 # 性格の話は一切しない（プロダクト方針）。呼びかけ込みで40字以内
 MINATO_LINES = {
+    "personal_attack": {
+        "perfectionist": "人として否定する話じゃないと思います。直したい行動はどれでしょう？",
+        "logical": "行動の話をしたいんだと思います。具体的にはどの場面のことでしょう？",
+        "sensitive": "あなた自身の否定じゃないと思います。どの場面の話か聞いてみませんか？",
+        "independent": "力を疑っている話じゃないと思います。どこを変えたいか聞いてみませんか？",
+    },
     "accusatory_why": {
         "perfectionist": "責める話じゃないと思うんです。どの時点なら声をかけやすいですか？",
         "logical": "経緯を知りたいんだと思います。どこで判断が分かれました？",
         "sensitive": "怒ってるのとは違うと思います。一番困ったのはどの場面でした？",
+        "independent": "やり方を責める話じゃないと思います。どこで判断しました？",
     },
     "common_sense_push": {
         "perfectionist": "できてない話じゃないと思います。どこを揃えたいか話せそうですか？",
         "logical": "やり方を揃えたいんだと思います。今の進め方の理由は何でした？",
         "sensitive": "一緒に確認したいんだと思います。迷ったところはありますか？",
+        "independent": "進め方をそろえたいんだと思います。今のやり方の狙いは何でした？",
     },
     "pressure": {
         "perfectionist": "全部じゃなくて大丈夫かもです。まずどこまでなら見せられそうですか？",
         "logical": "見通しを知りたいんだと思います。残りの作業はどれくらいですか？",
         "sensitive": "心配してくれてるんだと思います。今止まってるのはどこですか？",
+        "independent": "見通しを共有したいんだと思います。いつ頃なら見せられそうですか？",
     },
     "denial": {
         "perfectionist": "直したいのは一部だと思います。うまくいった所はどこでした？",
         "logical": "気になる点があるんだと思います。どの部分か確かめてみませんか？",
         "sensitive": "全部がだめって話じゃないと思います。一番気になる所はどこですか？",
+        "independent": "全部を否定する話じゃないと思います。直したいのはどの部分でしょう？",
     },
     "repetition_blame": {
         "perfectionist": "仕組みで防ぎたいんだと思います。どの手順で止まりやすいですか？",
         "logical": "原因を揃えたいんだと思います。前回と違った条件は何でした？",
         "sensitive": "一緒に防ぎたいんだと思います。つまずきやすいのはどこですか？",
+        "independent": "仕組みで防ぎたいんだと思います。自分ならどう防ぎますか？",
     },
     "vague_demand": {
         "perfectionist": "全部じゃなく一点だと思います。まずどこを整えたいですか？",
         "logical": "基準を揃えたいんだと思います。どこが曖昧でした？",
         "sensitive": "心配なんだと思います。今いちばん不安なのはどこですか？",
+        "independent": "期待の基準をそろえたいんだと思います。どこまでやれば十分ですか？",
     },
     "disappointment": {
         "perfectionist": "期待があるからだと思います。次に試したいことはありますか？",
         "logical": "期待との差を話したいんだと思います。どこがずれてそうですか？",
         "sensitive": "見放す話じゃないと思います。今の気持ちを話せそうですか？",
+        "independent": "任せたい気持ちがあるからだと思います。次はどう進めたいですか？",
     },
     "sigh_tone": {
         "perfectionist": "少し考え中なのかもです。今どこで止まってるか話せそうですか？",
         "logical": "言葉を探してるのかもです。状況を一度整理してみませんか？",
         "sensitive": "怒ってるとは限らないかもです。今話しづらいことはありますか？",
+        "independent": "言葉を探しているのかもです。今の考えを先に伝えてみませんか？",
     },
 }
 
@@ -422,6 +570,10 @@ def speech_is_safe(speech: str, config: dict) -> bool:
 
 # 上司だけが画面で読む、言い換えの提案
 BOSS_TIPS = {
+    "personal_attack": [
+        "人や能力を指す言葉は、強く残ってしまうかもです〜。「この資料のこの部分を直そう」って、行動や場面を指して伝えるのはどうですかね？",
+        "「使えない」「向いてない」みたいな言葉は、相手の方が自分を否定しちゃうきっかけになりやすいです。何が起きていて、次にどうしてほしいかを伝えると届きやすいと思いますよ！",
+    ],
     "accusatory_why": [
         "今の聞き方だと、ちょっと身構えちゃうかもです〜。「どういう経緯だったか教えてもらえますか？」って感じだと、話しやすくなると思いますよ！",
         "「なんで」って言われると、ちょっと責められてる感じになっちゃうかもです。「きっかけを教えてもらっていい？」だと答えやすいかもですね！",
@@ -458,60 +610,90 @@ BOSS_TIPS = {
 }
 
 META_NOTES = {
+    "personal_attack": {
+        "perfectionist": "このタイプは能力の否定を、存在そのものの否定と受け取りやすい傾向があります",
+        "logical": "このタイプは根拠のない人格評価に反発し、話を聞かなくなる傾向があります",
+        "sensitive": "このタイプは人格への言葉で強く傷つき、その後の話が入らなくなる傾向があります",
+        "independent": "このタイプは能力を疑う言葉に、信頼を失ったと感じて距離を取る傾向があります",
+    },
     "accusatory_why": {
         "perfectionist": "このタイプは「なぜ」と問われると「自分が無能だから」と自責に向かう傾向があります",
         "logical": "このタイプは感情的な追及と受け取り、論理的な対話ができなくなる傾向があります",
         "sensitive": "このタイプは「なぜ」を「怒られている」と感じフリーズする傾向があります",
+        "independent": "このタイプは「なぜ」を自分の判断への不信と受け取り、説明に終始する傾向があります",
     },
     "common_sense_push": {
         "perfectionist": "このタイプは「普通もできない自分」と全否定に向かう傾向があります",
         "logical": "このタイプは論理的根拠のない主張に反発し、対話が止まる傾向があります",
         "sensitive": "このタイプは「自分だけがおかしい」と孤立感を覚える傾向があります",
+        "independent": "このタイプは「普通は」を、やり方の否定と受け取り反発する傾向があります",
     },
     "pressure": {
         "perfectionist": "このタイプは急かされると「完璧にしなきゃ」と焦り、ミスが増える傾向があります",
         "logical": "このタイプは急かす根拠が不明確だと期限設定自体に疑問を持つ傾向があります",
         "sensitive": "このタイプはパニックになって思考停止してしまう傾向があります",
+        "independent": "このタイプは急かしを「信頼されていない」と受け取り、意欲が下がる傾向があります",
     },
     "denial": {
         "perfectionist": "このタイプは部分的な否定を人格全体の否定として受け取る傾向があります",
         "logical": "このタイプは主観的な評価に不信感を持つ傾向があります",
         "sensitive": "このタイプは否定が続くと「見放された」と感じる傾向があります",
+        "independent": "このタイプは否定を、任されていたことの取り上げと受け取る傾向があります",
     },
     "repetition_blame": {
         "perfectionist": "このタイプは「自分は学べない人間だ」と自責に直結する傾向があります",
         "logical": "このタイプは感情的な繰り返し指摘を「非論理的」と受け取り壁を作る傾向があります",
         "sensitive": "このタイプは「自分はダメな人間だ」と思い込む傾向があります",
+        "independent": "このタイプは繰り返しの指摘を、管理されていると感じて壁を作る傾向があります",
     },
     "vague_demand": {
         "perfectionist": "このタイプは基準が不明確だと「何をしても足りない」と不安が膨らむ傾向があります",
         "logical": "このタイプは曖昧な指示から目的を読み取れずストレスを感じる傾向があります",
         "sensitive": "このタイプは「今の自分じゃダメ」と自己否定につながる傾向があります",
+        "independent": "このタイプは曖昧な要求に、自分の基準で進めてずれが大きくなる傾向があります",
     },
     "disappointment": {
         "perfectionist": "このタイプは「期待に応えられない自分は無価値」と存在否定に至る傾向があります",
         "logical": "このタイプは感情的な表現から改善点を読み取れず困惑する傾向があります",
         "sensitive": "このタイプは「自分のせいで悲しませた」と罪悪感に押しつぶされる傾向があります",
+        "independent": "このタイプは失望の言葉を「もう任せてもらえない」と受け取る傾向があります",
     },
     "sigh_tone": {
         "perfectionist": "このタイプは「呆れられている、見捨てられる」と感じて萎縮する傾向があります",
         "logical": "このタイプは感情的な態度に壁を作り、コミュニケーションが断絶する傾向があります",
         "sensitive": "このタイプはため息や呆れた態度で「怒っている」と感じフリーズする傾向があります",
+        "independent": "このタイプは呆れた態度に、自分のやり方を否定されたと感じる傾向があります",
     },
 }
 
 
 # 同じ言い方でも性格タイプによって響き方が違うため、カテゴリごとに基本スコアを補正する
 TYPE_WEIGHTS = {
-    "perfectionist": {"accusatory_why": 2, "repetition_blame": 1, "disappointment": 2, "denial": 1,
+    "perfectionist": {"personal_attack": 1, "accusatory_why": 2, "repetition_blame": 1, "disappointment": 2, "denial": 1,
                       "vague_demand": 1, "common_sense_push": 0, "pressure": 0, "sigh_tone": 0},
-    "logical": {"accusatory_why": -1, "repetition_blame": 0, "disappointment": -1, "denial": 0,
+    "logical": {"personal_attack": 0, "accusatory_why": -1, "repetition_blame": 0, "disappointment": -1, "denial": 0,
                 "vague_demand": 2, "common_sense_push": 2, "pressure": -1, "sigh_tone": 0},
-    "sensitive": {"accusatory_why": 1, "repetition_blame": 1, "disappointment": 1, "denial": 2,
+    "sensitive": {"personal_attack": 1, "accusatory_why": 1, "repetition_blame": 1, "disappointment": 1, "denial": 2,
                   "vague_demand": 0, "common_sense_push": 0, "pressure": 2, "sigh_tone": 2},
+    "independent": {"personal_attack": 1, "accusatory_why": 0, "repetition_blame": 1, "disappointment": 0, "denial": 1,
+                    "vague_demand": 1, "common_sense_push": 2, "pressure": 1, "sigh_tone": 1},
+}
+
+# 面談の状況。介入のしきい値の増減と、特に気をつける言い方の重み
+SITUATIONS = {
+    "progress": {"label": "進捗の確認", "threshold": 0, "weights": {"pressure": 1, "vague_demand": 1},
+                 "prompt": "仕事の進み具合を確認する面談。事実の確認を優先し、急かしや曖昧な要求に注意する"},
+    "feedback": {"label": "指摘とフォロー", "threshold": -1,
+                 "weights": {"denial": 1, "repetition_blame": 1, "disappointment": 1, "accusatory_why": 1, "personal_attack": 1},
+                 "prompt": "上司が改善点を伝える面談。指摘の中身は消さず、部下が自己否定せず受け取れるように整える"},
+    "goal": {"label": "目標の設定", "threshold": 0, "weights": {"vague_demand": 1, "common_sense_push": 1},
+             "prompt": "これからの目標を決める面談。期待の基準が曖昧なままにならないよう注意する"},
+    "casual": {"label": "雑談・相談", "threshold": 1, "weights": {},
+               "prompt": "部下の話を聞く面談。会話の流れを止めないよう、はっきりした場合だけ介入する"},
 }
 
 CATEGORY_EXAMPLES = {
+    "personal_attack": "「使えないな」「向いてないよ」",
     "accusatory_why": "「なんで〜しなかったの？」",
     "common_sense_push": "「普通はこうするでしょ」",
     "pressure": "「いつまでかかってるの」",
@@ -522,18 +704,36 @@ CATEGORY_EXAMPLES = {
     "sigh_tone": "「はぁ…もういいよ」",
 }
 
+# 4つの傾向を6問ずつ（うち1問は逆の聞き方）。上司が答える文（boss）と、部下本人が答える文（self）
 PROFILE_QUESTIONS = [
-    {"id": "q1", "text": "ミスをすると、必要以上に自分を責めているように見える", "weights": {"perfectionist": 2, "sensitive": 1}},
-    {"id": "q2", "text": "仕事の完成度にこだわり、なかなか「できました」と言わない", "weights": {"perfectionist": 2}},
-    {"id": "q3", "text": "指示を受けると「なぜそうするのか」理由や根拠を確認したがる", "weights": {"logical": 2}},
-    {"id": "q4", "text": "気持ちに訴えるより、事実やデータで話すと納得しやすい", "weights": {"logical": 2}},
-    {"id": "q5", "text": "こちらの声のトーンや表情の変化に敏感に反応する", "weights": {"sensitive": 2}},
-    {"id": "q6", "text": "強めに指摘されると、黙り込んだり固まったりする", "weights": {"sensitive": 2, "perfectionist": 1}},
-    {"id": "q7", "text": "困っていても、自分から相談するのが遅れがち", "weights": {"perfectionist": 1, "sensitive": 1}},
-    {"id": "q8", "text": "曖昧な指示だと、動き出しが遅くなったり質問が増えたりする", "weights": {"logical": 1, "perfectionist": 1}},
+    {"id": "q1", "dim": "perfectionist", "boss": "ミスをすると、必要以上に自分を責めているように見える", "self": "ミスをすると、必要以上に自分を責めてしまう", "reverse": False},
+    {"id": "q2", "dim": "logical", "boss": "指示を受けると「なぜそうするのか」理由や根拠を確認したがる", "self": "指示を受けると、理由や根拠を確認したくなる", "reverse": False},
+    {"id": "q3", "dim": "sensitive", "boss": "こちらの声のトーンや表情の変化に敏感に反応する", "self": "相手の声のトーンや表情の変化が気になる", "reverse": False},
+    {"id": "q4", "dim": "independent", "boss": "細かく指示されると、やる気が下がっているように見える", "self": "細かく指示されると、やる気が下がる", "reverse": False},
+    {"id": "q5", "dim": "perfectionist", "boss": "仕事の完成度にこだわり、なかなか「できました」と言わない", "self": "完成度が気になって、なかなか「できました」と言えない", "reverse": False},
+    {"id": "q6", "dim": "logical", "boss": "気持ちに訴えるより、事実やデータで話すと納得しやすい", "self": "気持ちより、事実やデータで話してもらうほうが納得できる", "reverse": False},
+    {"id": "q7", "dim": "sensitive", "boss": "強めに指摘されると、黙り込んだり固まったりする", "self": "強めに指摘されると、頭が真っ白になったり固まったりする", "reverse": False},
+    {"id": "q8", "dim": "independent", "boss": "やり方を任されると、生き生きと動く", "self": "やり方を任されると、力を発揮しやすい", "reverse": False},
+    {"id": "q9", "dim": "perfectionist", "boss": "指摘を受けると「自分はダメだ」と受け止めているように見える", "self": "指摘を受けると「自分はダメだ」と感じやすい", "reverse": False},
+    {"id": "q10", "dim": "logical", "boss": "曖昧な指示だと、動き出しが遅くなったり質問が増えたりする", "self": "曖昧な指示だと、動き出す前に確認したくなる", "reverse": False},
+    {"id": "q11", "dim": "sensitive", "boss": "ため息や沈黙を「怒っている」と受け取りやすい", "self": "相手のため息や沈黙を「怒っている」と感じやすい", "reverse": False},
+    {"id": "q12", "dim": "independent", "boss": "進め方に口を出されると、「信頼されていない」と受け取っているように見える", "self": "進め方に口を出されると、「信頼されていない」と感じる", "reverse": False},
+    {"id": "q13", "dim": "perfectionist", "boss": "困っていても、自分で何とかしようとして相談が遅れがち", "self": "困っても、自分で何とかしようとして相談が遅れがち", "reverse": False},
+    {"id": "q14", "dim": "logical", "boss": "納得できない指摘には、言い返したり黙り込んだりする", "self": "納得できない指摘には、反論したくなったり黙ってしまったりする", "reverse": False},
+    {"id": "q15", "dim": "sensitive", "boss": "謝罪の言葉が多い", "self": "つい謝ってしまうことが多い", "reverse": False},
+    {"id": "q16", "dim": "independent", "boss": "自分の考えたやり方を、なかなか変えようとしない", "self": "自分の考えたやり方を、なかなか変えたくない", "reverse": False},
+    {"id": "q17", "dim": "perfectionist", "boss": "褒められても「まだまだです」と素直に受け取らないことが多い", "self": "褒められても素直に受け取れないことが多い", "reverse": False},
+    {"id": "q18", "dim": "logical", "boss": "「普通は」「常識的に」と言われると、引っかかっているように見える", "self": "「普通は」「常識的に」と言われると引っかかる", "reverse": False},
+    {"id": "q19", "dim": "sensitive", "boss": "面談の後も、言われたことを長く引きずっているように見える", "self": "言われたことを、あとまで長く引きずってしまう", "reverse": False},
+    {"id": "q20", "dim": "independent", "boss": "自分で決めたことは、最後までやり切ろうとする", "self": "自分で決めたことは、最後までやり切りたい", "reverse": False},
+    {"id": "q21", "dim": "perfectionist", "boss": "失敗しても、すぐに気持ちを切り替えて次に進めている", "self": "失敗しても、すぐに気持ちを切り替えられる", "reverse": True},
+    {"id": "q22", "dim": "logical", "boss": "理由を聞かずに、言われたとおりに進めることが多い", "self": "理由を聞かずに、言われたとおりに進めることが多い", "reverse": True},
+    {"id": "q23", "dim": "sensitive", "boss": "厳しい言い方をされても、落ち着いて話を続けられる", "self": "厳しい言い方をされても、落ち着いて話を続けられる", "reverse": True},
+    {"id": "q24", "dim": "independent", "boss": "細かく確認してもらえるほうが、安心して進められるように見える", "self": "細かく確認してもらえるほうが、安心して進められる", "reverse": True},
 ]
 
-TYPE_KEYS = ["perfectionist", "logical", "sensitive"]
+TYPE_KEYS = ["perfectionist", "logical", "sensitive", "independent"]
+DIM_LABELS = {"perfectionist": "自分を責める傾向", "logical": "根拠・納得を求める傾向", "sensitive": "口調や空気への敏感さ", "independent": "自分で決めたい傾向"}
 
 
 # 部下の発言に出る「萎縮のサイン」。介入はせず、上司向けに画面だけでヒントを出す
@@ -549,7 +749,8 @@ SUBORDINATE_SIGNALS = [
             r"(?:どうせ|何をやっても|なにをやっても)",
         ],
         "hint": "部下さんが自分を責める言葉を使っています。まず「話してくれてありがとう」と受け止めてから、事実の話に戻すと安心しやすいです。",
-        "forecast": {"perfectionist": "自分を責めているかも", "logical": "結論を急いでいるかも", "sensitive": "気持ちが沈んでいるかも"},
+        "forecast": {"perfectionist": "自分を責めているかも", "logical": "結論を急いでいるかも", "sensitive": "気持ちが沈んでいるかも", "independent": "結論を急いでいるかも"},
+        "reframe": "起きたことと、自分の評価は分けて見てみませんか？",
     },
     {
         "id": "give_up",
@@ -559,7 +760,8 @@ SUBORDINATE_SIGNALS = [
             r"(?:わかりません|分かりません|できません|わからないです|分からないです)(?:\s*$|[。…])",
         ],
         "hint": "「わからない」「無理」は、手が止まっているサインかもしれません。どこまでは分かっているかを一緒に区切ると動きやすくなります。",
-        "forecast": {"perfectionist": "手が止まっているかも", "logical": "情報が足りないのかも", "sensitive": "固まっているかも"},
+        "forecast": {"perfectionist": "手が止まっているかも", "logical": "情報が足りないのかも", "sensitive": "固まっているかも", "independent": "納得できていないのかも"},
+        "reframe": "分かっているところまで、一緒に区切ってみませんか？",
     },
     {
         "id": "over_apology",
@@ -567,7 +769,8 @@ SUBORDINATE_SIGNALS = [
         "patterns": [r"(?:すみません|すいません|申し訳(?:ない|ありません|ございません)|ごめんなさい)"],
         "repeat": 2,   # 直近3回の部下の発言のうち2回以上で出たときだけ
         "hint": "謝罪が続いています。責めていないことを一言伝えると、次の言葉が出やすくなります。",
-        "forecast": {"perfectionist": "身構えているかも", "logical": "身構えているかも", "sensitive": "身構えているかも"},
+        "forecast": {"perfectionist": "身構えているかも", "logical": "身構えているかも", "sensitive": "身構えているかも", "independent": "身構えているかも"},
+        "reframe": "責められているわけではないと思います。続きを聞かせてください。",
     },
 ]
 
@@ -587,18 +790,21 @@ def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: 
             "label": sig["label"],
             "hint": sig["hint"],
             "forecast": sig["forecast"].get(type_key, "様子を見たい場面です"),
+            "reframe": sig.get("reframe", ""),
         }
     return None
 
 
-def category_weights(config: dict) -> dict:
-    """主タイプの補正に、副タイプの補正を半分だけ加える"""
+def category_weights(config: dict, situation: str | None = None) -> dict:
+    """主タイプの補正に、副タイプの補正を半分だけ加え、面談の状況の重みを足す"""
     primary = config.get("active_preset", "perfectionist")
     secondary = (config.get("profile_analysis") or {}).get("secondary")
     weights = dict(TYPE_WEIGHTS.get(primary, {}))
     if secondary and secondary != primary:
         for cat, w in TYPE_WEIGHTS.get(secondary, {}).items():
             weights[cat] = weights.get(cat, 0) + w * 0.5
+    for cat, w in SITUATIONS.get(situation or "", {}).get("weights", {}).items():
+        weights[cat] = weights.get(cat, 0) + w
     return weights
 
 
@@ -636,15 +842,52 @@ def build_profile_result(config: dict, primary: str, secondary, scores) -> dict:
     }
 
 
+def _answer(answers: dict, qid: str):
+    v = answers.get(qid)
+    try:
+        return max(0, min(3, int(v)))
+    except (TypeError, ValueError):
+        return None
+
+
 def score_profile(answers: dict) -> dict:
-    totals = {k: 0.0 for k in TYPE_KEYS}
-    maxima = {k: 0.0 for k in TYPE_KEYS}
+    """傾向ごとに 0〜100 点。逆の聞き方の質問は、答えを反転して足す"""
+    totals = {k: 0 for k in TYPE_KEYS}
+    counts = {k: 0 for k in TYPE_KEYS}
     for q in PROFILE_QUESTIONS:
-        a = max(0, min(3, int(answers.get(q["id"], 0))))
-        for t, w in q["weights"].items():
-            totals[t] += a * w
-            maxima[t] += 3 * w
-    return {t: round(totals[t] / maxima[t] * 100) if maxima[t] else 0 for t in TYPE_KEYS}
+        a = _answer(answers, q["id"])
+        if a is None:
+            continue
+        totals[q["dim"]] += (3 - a) if q["reverse"] else a
+        counts[q["dim"]] += 1
+    return {k: round(totals[k] / (counts[k] * 3) * 100) if counts[k] else 0 for k in TYPE_KEYS}
+
+
+def profile_confidence(answers: dict, scores: dict) -> dict:
+    """答えの確かさ。全部同じ答え・逆の聞き方との矛盾・未回答を見る"""
+    given = [(q, _answer(answers, q["id"])) for q in PROFILE_QUESTIONS]
+    given = [(q, a) for q, a in given if a is not None]
+    reasons = []
+    if len(given) < len(PROFILE_QUESTIONS):
+        reasons.append(f"未回答が{len(PROFILE_QUESTIONS) - len(given)}問あります")
+    if given and len({a for _, a in given}) == 1:
+        reasons.append("すべて同じ答えになっています")
+    conflicts = 0
+    for dim in TYPE_KEYS:
+        fwd = [a for q, a in given if q["dim"] == dim and not q["reverse"]]
+        rev = [a for q, a in given if q["dim"] == dim and q["reverse"]]
+        if fwd and rev and sum(fwd) / len(fwd) >= 2.4 and rev[0] >= 2:
+            conflicts += 1
+    if conflicts:
+        reasons.append(f"逆の聞き方の質問と食い違う答えが{conflicts}か所あります")
+    level = "high"
+    if len({a for _, a in given}) <= 1 or conflicts >= 2 or len(given) < len(PROFILE_QUESTIONS) * 0.75:
+        level = "low"
+    elif conflicts == 1 or len(given) < len(PROFILE_QUESTIONS):
+        level = "medium"
+    ranked = sorted(scores.values(), reverse=True)
+    mixed = len(ranked) > 1 and ranked[0] - ranked[1] < 8
+    return {"level": level, "reasons": reasons, "mixed": mixed}
 
 
 def strip_safe_clauses(transcript: str) -> str:
@@ -667,12 +910,14 @@ def find_attack_matches(transcript: str) -> list:
     return matches
 
 
-def get_dummy_response(transcript: str, config: dict, context: list[str] = None) -> dict:
-    """攻撃パターン検出 × 部下の性格補正で介入を判定する（ローカル判定エンジン）"""
+def get_dummy_response(transcript: str, config: dict, context: list[str] = None, meta: dict | None = None) -> dict:
+    """攻撃パターン検出 × 部下の性格補正 × 面談の状況で介入を判定する（ローカル判定エンジン）"""
     active_key = config.get("active_preset", "perfectionist")
     sensitivity = config.get("sensitivity", "medium")
+    situation = (meta or {}).get("situation")
     threshold = {"low": 8, "medium": 6, "high": 4}.get(sensitivity, 6)
-    weights = category_weights(config)
+    threshold = max(3, min(9, threshold + SITUATIONS.get(situation or "", {}).get("threshold", 0)))
+    weights = category_weights(config, situation)
 
     best = None
     for pattern_group, base in find_attack_matches(transcript):
@@ -709,7 +954,7 @@ def get_dummy_response(transcript: str, config: dict, context: list[str] = None)
         result.update({
             "should_intervene": True,
             "risk_level": "high" if final >= 8 else "medium",
-            "reason": f"「{pattern_group['label']}」を検出｜基本{base} 性格補正{adj_text} → {final}/10（閾値{threshold}）",
+            "reason": f"「{pattern_group['label']}」を検出｜基本{base} 補正{adj_text} → {final}/10（閾値{threshold}）",
         })
     else:
         result.update({
@@ -741,11 +986,12 @@ async def update_config(request: Request):
 class ProfileRequest(BaseModel):
     answers: dict[str, int] | None = None
     preset: str | None = None
+    respondent: str = "self"   # 診断は部下本人が答える
 
 
 @app.get("/profile/questions")
 async def profile_questions():
-    return JSONResponse([{"id": q["id"], "text": q["text"]} for q in PROFILE_QUESTIONS])
+    return JSONResponse([{"id": q["id"], "dim": q["dim"], "boss": q["boss"], "self": q["self"]} for q in PROFILE_QUESTIONS])
 
 
 @app.get("/profile")
@@ -769,6 +1015,8 @@ async def analyze_profile(req: ProfileRequest):
         secondary = runner_up if scores[runner_up] >= 40 and scores[primary] - scores[runner_up] <= 15 else None
         result = build_profile_result(config, primary, secondary, scores)
         result["answers"] = answers
+        result["respondent"] = "self" if req.respondent == "self" else "boss"
+        result["confidence"] = profile_confidence(answers, scores)
 
     config["active_preset"] = result["primary"]
     config["profile_analysis"] = result
@@ -784,7 +1032,7 @@ def claude_allowed(config: dict) -> bool:
     return bool((config.get("judge") or {}).get("use_claude")) and not api_state["disabled"]
 
 
-def ask_claude(config: dict, transcript: str, context: list[str]) -> dict | None:
+def ask_claude(config: dict, transcript: str, context: list[str], meta: dict | None = None) -> dict | None:
     context_text = "\n".join(f"- {c}" for c in context)
     user_message = f"""【直近の会話】
 {context_text}
@@ -799,7 +1047,7 @@ def ask_claude(config: dict, transcript: str, context: list[str]) -> dict | None
         response = (api.messages if is_haiku else api.beta.messages).create(
             model=CLAUDE_MODEL,
             max_tokens=1024,
-            system=build_system_prompt(config),
+            system=build_system_prompt(config, meta),
             messages=[{"role": "user", "content": user_message}],
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
             **params,
@@ -835,27 +1083,29 @@ def merge_claude(ai: dict, local: dict, config: dict) -> dict:
     return merged
 
 
-def judge_boss(transcript: str, context: list[str], config: dict, allow_external: bool) -> dict:
+def judge_boss(transcript: str, context: list[str], config: dict, allow_external: bool, meta: dict | None = None) -> dict:
     """まず端末内で判定し、気になる言い方が見つかった発言だけClaudeに確認する"""
-    local = get_dummy_response(transcript, config, context)
+    local = get_dummy_response(transcript, config, context, meta)
     result, sent = local, False
     if allow_external and local.get("attack_score", 0) > 0 and claude_allowed(config):
         sent = True
-        ai = ask_claude(config, transcript, context)
+        ai = ask_claude(config, transcript, context, meta)
         if ai:
             result = merge_claude(ai, local, config)
     return {**result, "external_sent": sent}
 
 
 def cached_judge(transcript: str, context: list[str], config: dict, allow_external: bool) -> dict:
-    key = (re.sub(r"[\s、。，．,.…・!！?？]", "", transcript), tuple(context), allow_external)
+    meta = dict(session_meta)
+    key = (re.sub(r"[\s、。，．,.…・!！?？]", "", transcript), tuple(context), allow_external,
+           meta.get("situation"), json.dumps(meta.get("intent") or {}, ensure_ascii=False, sort_keys=True))
     now = time.monotonic()
     with judge_cache_lock:
         for k in [k for k, (exp, _) in judge_cache.items() if exp < now]:
             del judge_cache[k]
         entry = judge_cache.get(key)
         if entry is None:
-            entry = (now + 30, judge_pool.submit(judge_boss, transcript, context, config, allow_external))
+            entry = (now + 30, judge_pool.submit(judge_boss, transcript, context, config, allow_external, meta))
             judge_cache[key] = entry
     return dict(entry[1].result())
 
@@ -869,7 +1119,8 @@ def describe_sent(result: dict, transcript: str, context: list[str], config: dic
         "to": "Anthropic",
         "masked_transcript": transcript,
         "masked_context": context,
-        "also_sent": ["部下の特性プロファイル", "介入感度", "キャラクター設定"],
+        "also_sent": ["部下の特性プロファイル", "介入感度", "キャラクター設定", "面談の状況"]
+                     + (["上司が事前に伝えたいこと（名前は置き換え済み）"] if any((session_meta.get("intent") or {}).values()) else []),
     }
 
 
@@ -1027,9 +1278,38 @@ def tts(req: TTSRequest):
     return Response(content=wav.content, media_type="audio/wav")
 
 
+def clean_intent(raw) -> dict:
+    raw = raw if isinstance(raw, dict) else {}
+    goals = [g.strip()[:60] for g in (raw.get("goals") or []) if isinstance(g, str) and g.strip()][:3]
+    take = raw.get("takeaway") if isinstance(raw.get("takeaway"), str) else ""
+    out = raw.get("outcome") if isinstance(raw.get("outcome"), str) else ""
+    return {"goals": goals, "takeaway": take.strip()[:40], "outcome": out.strip()[:60]}
+
+
+class StartSessionRequest(BaseModel):
+    situation: str = "progress"
+    intent: dict | None = None
+
+
+class SituationRequest(BaseModel):
+    situation: str
+
+
+@app.post("/session/situation")
+async def set_situation(req: SituationRequest):
+    if req.situation not in SITUATIONS:
+        return JSONResponse({"error": "unknown situation"}, status_code=400)
+    session_meta["situation"] = req.situation
+    session_log.setdefault("situation_changes", []).append({"timestamp": datetime.now().isoformat(), "situation": req.situation})
+    return JSONResponse({"status": "ok", "situation": req.situation})
+
+
 @app.post("/start-session")
-async def start_session():
+async def start_session(req: StartSessionRequest | None = None):
     config = load_config()
+    session_meta["situation"] = req.situation if req and req.situation in SITUATIONS else "progress"
+    session_meta["intent"] = clean_intent(req.intent if req else None)
+    session_log["situation_changes"] = []
     session_log["started_at"] = datetime.now().isoformat()
     session_log["config_snapshot"] = config
     session_log["conversations"] = []
@@ -1046,6 +1326,7 @@ async def start_session():
 class EndSessionRequest(BaseModel):
     turn_log: list[dict] = []   # 話す／見送るの判断の記録（発言の本文は含まない）
     metrics: list[dict] = []    # 音声認識の速さと区切りの計測（時間と件数だけ）
+    intent_covered: int | None = None  # 伝えたいことのうち、話題に出た件数（目安）
 
 
 def log_for_disk(log: dict, config: dict) -> dict:
@@ -1078,6 +1359,7 @@ def log_for_disk(log: dict, config: dict) -> dict:
         ],
         "turn_log": log.get("turn_log", []),
         "metrics": clean_metrics(log.get("metrics", [])),
+        "meeting": log.get("meeting"),  # 状況と件数だけ。伝えたいことの本文は残さない
     }
 
 
@@ -1087,6 +1369,14 @@ def end_session(req: EndSessionRequest | None = None):
         return JSONResponse({"status": "no_active_session"})
 
     session_log["turn_log"] = (req.turn_log if req else [])[:2000]
+    intent = session_meta.get("intent") or {}
+    session_log["meeting"] = {
+        "situation": session_meta.get("situation"),
+        "situation_changes": [c.get("situation") for c in session_log.get("situation_changes", [])],
+        "intent_goals": len(intent.get("goals") or []),
+        "intent_takeaway": bool(intent.get("takeaway")),
+        "intent_covered": req.intent_covered if req and isinstance(req.intent_covered, int) else None,
+    }
     session_log["metrics"] = clean_metrics(req.metrics if req else [])
     filename = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     filepath = LOGS_DIR / filename
@@ -1167,5 +1457,6 @@ async def login(request: Request):
 
 zoom_bridge.setup(load_config)
 app.include_router(zoom_bridge.router)
+app.include_router(stage_bridge.router)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
