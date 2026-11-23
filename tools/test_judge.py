@@ -198,5 +198,97 @@ check("視点の文は短く、性格の話をせず、上司の言い方とし�
 sig = main.detect_subordinate_signal("私のせいです、すみません", [], "independent")
 check("自分を責める言葉に、視点と4つ目のタイプの予報が付く", sig and sig["reframe"] and sig["forecast"])
 
+# ---- 発注書 v12：部下の受け取り方の支援 ----
+print("\n受け取り方の支援（v12）")
+lines_v12 = [s for v in main.MINATO_LINES.values() for s in v.values()]
+check("ミナトの声は上司の意図の代弁をしない（「〜だと思います」を使わない）", not any("だと思います" in s or "んだと思" in s for s in lines_v12))
+check("部下に責任を移す言葉を使わない", not any(w in s for s in lines_v12 for w in ["受け取り方が悪", "前向きに", "気にしすぎ", "考えすぎ"]))
+check("人格・能力の否定には、受け取るよう促さず「価値」か「行動」に分ける",
+      all(("価値" in s or "行動" in s) for s in main.MINATO_LINES["personal_attack"].values()))
+check("人格否定以外の全カテゴリに受け取り方の型があり、全カテゴリに言えるひとことがある",
+      all((c["id"] == "personal_attack" or main.CATEGORY_SKILL.get(c["id"]) in main.RECEIVE_SKILLS) and main.REPLY_EXAMPLES.get(c["id"])
+          for c in main.ATTACK_PATTERNS))
+pa_v = main.get_dummy_response("お前は本当に使えないな", {"active_preset": "logical", "sensitivity": "medium", "personality_presets": {}}, [], {})
+check("人格否定には型を付けず「受け取る練習の対象ではない」と示す（レビュー指摘6）",
+      pa_v["receive_skill"] is None and "対象ではありません" in pa_v["receive_note"] and "personal_attack" not in main.CATEGORY_SKILL)
+check("人格否定の声は「受け止めなくて大丈夫」と伝える", all("受け止めなくて大丈夫" in s for s in main.MINATO_LINES["personal_attack"].values()))
+check("言えるひとことは40字以内で、上司の言い方として検出されない",
+      all(len(s) <= 40 and not main.find_attack_matches(s) for s in main.REPLY_EXAMPLES.values()))
+v = main.get_dummy_response("もっとちゃんとやって", {"active_preset": "logical", "sensitivity": "medium", "personality_presets": {}}, [], {})
+check("判定結果に型（確かめる）と言えるひとことが付く", v["receive_skill"]["label"] == "確かめる" and v["reply_example"])
+
+sig = main.detect_subordinate_signal("私が悪くて、資料の提出が遅れてしまいました、すみません", [], "perfectionist")
+check("「私が悪くて」を自分を責める言葉として検出する", sig and sig["id"] == "self_blame")
+check("言い直しに発言の中の出来事を引用する（「資料の提出が遅れてしまいました」）", sig and "資料の提出が遅れてしまいました" in sig["rewrite"] and "次は" in sig["rewrite_example"])
+sig2 = main.detect_subordinate_signal("自分のせいです", [], "sensitive")
+check("出来事が取れない時は、ひな形の言い直しを出す", sig2 and sig2["rewrite"] and "〇〇" in sig2["rewrite_example"])
+check("あきらめ・謝罪の連続にも言い直しの例がある",
+      all(main.self_rewrite(k, "x")["rewrite"] for k in ("give_up", "over_apology")))
+
+GOOD = {"具体的にどの部分を直せばいいですか？": "clarify", "経緯をお話しします": "explain", "次は水曜までに見せます": "separate",
+        "なるほど、ポイントは期限ですね": "extract", "どこまでできていれば十分ですか": "clarify"}
+for t, k in GOOD.items():
+    check(f"良い受け取り方を検出：{t} → {main.RECEIVE_SKILLS[k]['label']}", k in [s["id"] for s in main.detect_receive_skills(t)])
+for t in ["はい", "わかりました", "すみません", "私のせいです", "無理です",
+          "なるほど、つまり私が全部悪いってことですね", "例えば私がいなくなればいいってことですか", "もう辞めてみます", "次は無理です",
+          "なるほど、全部私のせいです", "具体的に言うと私が無能ってことですよね"]:
+    check(f"型として数えない（褒めない）：{t}", not main.detect_receive_skills(t))
+check("1発言で数える型は1つだけ（レビュー指摘5）", len(main.detect_receive_skills("なるほど、具体的にどの部分ですか？経緯をお話しします。次は直します")) == 1)
+for t, want in {"私のせいでお客様が怒ってしまいました": "お客様が怒ってしまいました", "止まってしまいました、私のせいです": "止まってしまいました"}.items():
+    s = main.detect_subordinate_signal(t, [], "perfectionist")
+    check(f"出来事の引用で活用を壊さない：{want}", s and want in s["rewrite_example"])
+for t in ["上司に怒られました。私が悪いんです", "何回も言われました。私のせいです"]:
+    s = main.detect_subordinate_signal(t, [], "perfectionist")
+    check(f"上司の行為を部下の出来事として引用しない：{t}", s and "〇〇が起きました" in s["rewrite_example"])
+
+rlog = {"conversations": [{"speaker": "subordinate", "original": "部下の本文"}] * 3,
+        "receive_skills": [{"skills": ["clarify"]}, {"skills": ["clarify", "explain"]}],
+        "subordinate_signals": [{"signal": {"id": "self_blame"}, "transcript": "部下の本文"}],
+        "interventions": [{"result": {"should_intervene": True, "category_id": "personal_attack"}},
+                          {"result": {"should_intervene": True, "category_id": "denial"}}]}
+rs = main.receive_summary(rlog)
+check("ふりかえりの回数（確かめる2・伝える1・自己否定1・人格否定1）",
+      rs["skills"]["clarify"] == 2 and rs["skills"]["explain"] == 1 and rs["self_negation"] == 1 and rs["personal_attack_by_boss"] == 1)
+check("次の練習テーマは、促したのに使えていない型", rs["focus"] in ("separate", "extract"))
+check("ふりかえりの記録に発言の本文が入らない", "部下の本文" not in str(rs))
+saved_r = str(main.log_for_disk({**rlog, "started_at": "x", "receive_summary": rs}, {}))
+check("既定のログに受け取り方の回数は残り、本文は残らない", "'clarify': 2" in saved_r and "部下の本文" not in saved_r)
+
+pc = tc.post("/practice/check", json={"item_id": "p3", "reply": "どこまでやれば十分か、具体的に教えてもらえますか？"}).json()
+check("練習：狙いの型ができたら褒める", "確かめる" in pc["message"] and pc["saved"] is False)
+pc2 = tc.post("/practice/check", json={"item_id": "p1", "reply": "すみません、私がダメでした"}).json()
+check("練習：自分を責める返しに、言い直しの例を出す", pc2["self_negation"] and pc2["rewrite"])
+pc3 = tc.post("/practice/check", json={"item_id": "p2", "reply": "なるほど、全部私のせいです"}).json()
+check("練習：自己否定の返しを褒めない（レビュー指摘1）", not pc3["skills"] and "いいですね" not in pc3["message"] and pc3["self_negation"])
+pc4 = tc.post("/practice/check", json={"item_id": "p2", "reply": "すみません、一番直すべきところはどこですか？"}).json()
+check("練習：「すみません」1回を自分を責める言葉と言わない（レビュー指摘9）", not pc4["self_negation"] and "責める" not in pc4["message"])
+pc5 = tc.post("/practice/check", json={"item_id": "p3", "reply": "わかりません"}).json()
+check("練習：「わかりません」は自責ではなく、あきらめ向けの言葉で返す", "責める" not in pc5["message"] and "分かっている所" in pc5["message"])
+
+# 面談の流れ：デモは数えない・話者を直したら取り消す（レビュー指摘2・3）
+tc.post("/start-session")
+tc.post("/analyze", json={"transcript": "具体的にどの部分ですか？", "speaker": "subordinate", "speaker_source": "demo"})
+tc.post("/analyze", json={"transcript": "次は手順を見直してみます", "speaker": "subordinate", "speaker_source": "text"})
+tc.post("/analyze", json={"transcript": "経緯をお話しします", "speaker": "subordinate", "speaker_source": "text"})
+tc.post("/speaker-correction", json={"transcript": "経緯をお話しします", "from_speaker": "subordinate", "to_speaker": "boss"})
+flow = main.receive_summary(main.session_log)
+check("デモの発言は回数に入らず、話者を上司に直した発言は取り消される",
+      flow["skills"] == {"separate": 1, "extract": 0, "clarify": 0, "explain": 0} and flow["skills_total"] == 1)
+main.session_log["started_at"] = None
+
+check("練習：5問あり、知らない問題は受け付けない",
+      len(tc.get("/practice/items").json()["items"]) == 5 and tc.post("/practice/check", json={"item_id": "zz", "reply": "a"}).status_code == 400)
+
+# ---- 発注書 v13：自己否定を、その場で客観視する支援 ----
+print("\n自己否定の客観視（v13）")
+for t in ["自分なんてダメです", "私は仕事ができない人間です", "本当に情けない", "自分が嫌になる"]:
+    sg = main.detect_subordinate_signal(t, [], "perfectionist")
+    check(f"自己否定として検出し、事実・評価・問いを出す：{t}", sg and sg["id"] == "self_blame" and sg["objective"]["judgement"] and sg["objective"]["question"])
+for t in ["明日は会議に出席できないです", "私は来週休みを取ります", "資料の提出が遅れました"]:
+    check(f"ふつうの発言は自己否定にしない：{t}", main.detect_subordinate_signal(t, [], "perfectionist") is None)
+og = main.detect_subordinate_signal("私が悪くて、資料の提出が遅れてしまいました", [], "perfectionist")["objective"]
+check("事実と評価を分けて返す", og["fact"] == "資料の提出が遅れてしまいました" and og["judgement"] == "私が悪く")
+check("問いは評価の決めつけではなく、事実か評価かを聞く", all("べき" not in q and "ダメ" not in q for q in main.OBJECTIVE_QUESTIONS))
+
 print("\n失敗 0" if not failed else f"\n失敗 {failed}")
 sys.exit(1 if failed else 0)

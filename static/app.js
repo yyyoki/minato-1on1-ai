@@ -43,11 +43,19 @@ const DEMO_SCRIPT = [
   { who: "boss", text: "先週お願いした資料、進捗どうなってる？" },
   { who: "subordinate", text: "すみません…私の段取りが悪くて、まだ半分くらいです" },
   { who: "boss", text: "なんでもっと早く相談しなかったの？" },
-  { who: "boss", text: "そうだね。どういう経緯だったか教えてもらえる？" },
-  { who: "subordinate", text: "データの集計で迷っていて、どこまで調べればいいか分からなくなっていました" },
+  { who: "subordinate", text: "経緯をお話しします。データの集計で迷っていて、どこまで調べればいいか分からなくなっていました" },
   { who: "boss", text: "なるほど。じゃあ次は、どの時点で声をかけるか一緒に決めようか" },
-  { who: "subordinate", text: "はい、ありがとうございます。水曜までに一度見てもらえますか" },
+  { who: "subordinate", text: "はい。次は迷った日に相談します。水曜までに一度見てもらえますか" },
 ];
+
+// 受け取り方の4つの型（main.py の RECEIVE_SKILLS と同じ）
+const SKILLS = {
+  separate: { label: "分ける", desc: "人ではなく、行動・仕事の話として受け取る" },
+  extract: { label: "取り出す", desc: "言い方が強くても、直してほしい中身を拾う" },
+  clarify: { label: "確かめる", desc: "分からない所は、どの部分か具体的に聞く" },
+  explain: { label: "伝える", desc: "自分の事情や考えを、落ち着いて伝える" },
+};
+const SKILL_ORDER = ["separate", "extract", "clarify", "explain"];
 
 const state = {
   config: null,
@@ -97,6 +105,8 @@ const state = {
   goalsAuto: new Set(),    // 話題に出た目的（目安）
   goalsManual: new Map(),  // 上司がクリックで付け外しした目的
   receiveTipAt: {},        // 受け取り方のヒントを最後に出した時刻（種類ごと）
+  receive: null,           // 受け取り方メーター（この面談で部下ができた型の回数）
+  practice: null,          // 受け取り方の練習
   stageTip: true,          // ミナト用PCの画面に、上司への言い換えの提案も出す
   stageInfo: null,
   remoteWarned: false,
@@ -793,6 +803,7 @@ async function startMeeting() {
   state.goalsAuto = new Set();
   state.goalsManual = new Map();
   state.receiveTipAt = {};
+  resetReceive();
   state.turnLog = [];
   state.meter = Metrics.createMeter();
   state.verdicts = new Map();
@@ -921,6 +932,8 @@ async function endMeeting() {
   try {
     const data = await postJSON("/end-session", { turn_log: state.turnLog, metrics: state.meter ? state.meter.export() : [], intent_covered: goalsDoneCount() });
     state.meeting.logFile = data.file || null;
+    state.meeting.receive = data.receive || null;
+    state.meeting.receivePrev = data.receive_previous || null;
   } catch (e) {
     console.error(e);
   }
@@ -1122,17 +1135,28 @@ function showBossHint(title, result) {
   showHint("boss", title, parts.filter(Boolean).join(" "), showProfile() && result.reason ? "判定：" + result.reason : "");
 }
 
-// 部下が自分を責める言葉を言った時：声では割り込まず、ミナトの画面に「受け取り方の視点」を出す
-const RECEIVE_TIP_GAP_MS = 120000;
+// 部下が自分を責める言葉を言った時：声では割り込まず、ミナトの画面に「行動と次の一手での言い直し」を出す
+const RECEIVE_TIP_GAP_MS = 60000;
 function showReceiveTip(sig) {
-  if (!sig.reframe || state.demo) return;
+  const text = sig.rewrite || sig.reframe;
+  if (!text) return;
   const now = performance.now();
   if (state.receiveTipAt[sig.id] && now - state.receiveTipAt[sig.id] < RECEIVE_TIP_GAP_MS) return;
+  // 自己否定のサインのときだけ、最初に「声でも話す」を選んでいれば短く話しかける（内容は固定の文）
+  if (sig.id === "self_blame" && state.voiceOn && !state.demo && !state.isSpeaking && state.isRecording) {
+    setTimeout(() => { if (state.isRecording && !state.isSpeaking) speakAs("mofu", "自分を責めなくて大丈夫です。起きたことと、自分への評価を分けて見てみましょう。"); }, 700);
+  }
   state.receiveTipAt[sig.id] = now;
-  const result = { cushion_phrase: "", reframed_speech: sig.reframe };
-  showSpeechBubble(result, "受け取り方のヒント");
-  addMofuLine(`${sig.reframe}（画面で）`);
-  stageShow({ label: "受け取り方のヒント", text: sig.reframe });
+  const result = { cushion_phrase: "", reframed_speech: text, reply_example: sig.rewrite_example || "", reply_label: "言い直しの例", objective: sig.objective || null };
+  showSpeechBubble(result, "自分を責めなくて大丈夫");
+  addMofuLine(`${text}（画面で）`);
+  const ob = sig.objective;
+  stageShow({ intent: "自分を責めなくて大丈夫", text: ob ? `${text} ${ob.question}` : text, tip: sig.rewrite_example ? `言い直しの例：${sig.rewrite_example}` : "" });
+  if (state.receive) state.receive.rewrites++;
+}
+
+function resetReceive() {
+  state.receive = { rewrites: 0 };
 }
 
 // ---- 今日の目的（上司が事前に伝えたいこと）が話題に出たか：2文字のかたまりの重なりで見る目安 ----
@@ -1208,12 +1232,17 @@ let oldSpeechTimer = null;
 function intentLine() {
   return state.intent && state.intent.takeaway ? `上司さんが伝えたいこと：${state.intent.takeaway}` : "";
 }
+function skillLine(result) {
+  if (result.receive_note) return result.receive_note;
+  return result.receive_skill ? `受け取り方：${result.receive_skill.label}（${result.receive_skill.desc}）` : "";
+}
 function bubbleFor(result) {
+  const reply = result.reply_example ? `言えるひとこと：「${result.reply_example}」` : "";
   return {
     cushion: result.cushion_phrase || "",
     text: result.reframed_speech || "",
-    tip: state.stageTip ? result.boss_tip || "" : "",
-    intent: intentLine(),
+    tip: [reply, state.stageTip ? result.boss_tip || "" : ""].filter(Boolean).join("　"),
+    intent: skillLine(result) || intentLine(),
   };
 }
 function stageShow(bubble) {
@@ -1225,8 +1254,21 @@ function showSpeechBubble(result, label) {
   const intent = label ? "" : intentLine();
   $("speechIntent").hidden = !(intent || label);
   $("speechIntent").textContent = label || intent;
+  const skill = label ? "" : skillLine(result);
+  $("speechSkill").hidden = !skill;
+  $("speechSkill").textContent = skill;
   $("speechCushion").textContent = result.cushion_phrase || "";
   $("speechText").textContent = result.reframed_speech || "";
+  const ob = result.objective;
+  $("speechObjective").hidden = !ob;
+  if (ob) {
+    $("objFact").textContent = ob.fact ? `「${ob.fact}」` : "（何が起きたかを一言で言うと？）";
+    $("objJudge").textContent = ob.judgement ? `「${ob.judgement}」` : "";
+    $("objQuestion").textContent = ob.question;
+  }
+  $("speechReply").hidden = !result.reply_example;
+  $("speechReplyLabel").textContent = result.reply_label || "言えるひとこと";
+  $("speechReplyText").textContent = result.reply_example || "";
   $("speechFeedback").hidden = true;
   const speech = $("speech");
   speech.hidden = false;
@@ -1867,7 +1909,78 @@ function updateVoiceCredit() {
   $("voiceCredit").textContent = credits.length ? "音声：" + credits.join("、") : "";
 }
 
+// ---------- 受け取り方の練習（入力した返しは保存しない） ----------
+async function openPractice(back) {
+  try {
+    if (!state.practice) state.practice = { items: (await getJSON("/practice/items")).items };
+  } catch (e) {
+    toast("練習の問題を読み込めませんでした");
+    return;
+  }
+  state.practice.i = 0;
+  state.practice.back = back;
+  renderPractice();
+  showScreen("practice");
+}
+function renderPractice() {
+  const p = state.practice;
+  const it = p.items[p.i];
+  $("prProgress").textContent = `${p.i + 1} / ${p.items.length}`;
+  $("prBoss").textContent = it.boss;
+  $("prReply").value = "";
+  $("prResult").hidden = true;
+  $("prNext").hidden = true;
+  $("prNext").textContent = p.i === p.items.length - 1 ? "練習を終える" : "次の問題へ";
+  $("prReply").focus();
+}
+async function checkPractice(e) {
+  e.preventDefault();
+  const it = state.practice.items[state.practice.i];
+  let res;
+  try {
+    res = await postJSON("/practice/check", { item_id: it.id, reply: $("prReply").value });
+  } catch (err) {
+    toast("ミナトに見てもらえませんでした");
+    return;
+  }
+  $("prMessage").textContent = res.message;
+  $("prSkills").replaceChildren(...(res.skills || []).map((s) => el("span", "tag tag-good", "👍 " + s.label)));
+  $("prRewrite").hidden = !res.rewrite;
+  $("prRewrite").textContent = res.rewrite ? `${res.rewrite} 例：${res.rewrite_example}` : "";
+  $("prModel").textContent = res.model;
+  $("prResult").hidden = false;
+  $("prNext").hidden = false;
+}
+function nextPractice() {
+  const p = state.practice;
+  if (p.i >= p.items.length - 1) {
+    showScreen(p.back || "voices");
+    toast("練習おつかれさまでした！面談でも「言えるひとこと」を使ってみてください");
+    return;
+  }
+  p.i++;
+  renderPractice();
+}
+
 // ---------- ⑥ ふりかえり ----------
+// 受け取り方のふりかえり：できたことを数える。自己否定の回数で本人を責めない
+function renderReceiveSummary(m) {
+  const r = m.receive;
+  const selfNeg = r ? r.self_negation : 0;
+  const pa = r ? r.personal_attack_by_boss : 0;
+  const prev = m.receivePrev;
+  const lines = [];
+  lines.push(selfNeg
+    ? `自分を責める言葉が出た場面が ${selfNeg}回 ありました。そのたびに、「起きたこと」と「自分への評価」を分けて見る手がかりを出しています。`
+    : "今回は、自分を責める言葉は出ませんでした。");
+  if (prev && typeof prev.self_negation === "number" && r && r.sub_utterances && selfNeg < prev.self_negation) {
+    lines.push(`前回（${prev.self_negation}回）より減りました。`);
+  }
+  $("smReceiveText").textContent = lines.join(" ");
+  $("smReceiveBoss").hidden = !pa;
+  if (pa) $("smReceiveBoss").textContent = `上司の方へ：人や能力に向いた言葉が ${pa}回 ありました。これは受け取る側の練習ではなく、言い方で直す部分です。「どの行動を、なぜ、どう変えてほしいか」で伝えると届きやすくなります。`;
+}
+
 function renderSummary() {
   const m = state.meeting;
   const count = voicedCount(m);
@@ -1898,6 +2011,8 @@ function renderSummary() {
   const goals = state.intent.goals;
   $("smGoals").hidden = !goals.length;
   $("smGoalsList").replaceChildren(...goals.map((g, i) => el("li", goalDone(i) ? "is-done" : "", g + (goalDone(i) ? "" : "（まだ話題に出ていないかも）"))));
+
+  renderReceiveSummary(m);
 
   const byOutcome = (keys) => m.interventions.filter((iv) => keys.includes(iv.outcome)).length;
   $("smOutcomes").textContent = m.interventions.length
@@ -2238,6 +2353,11 @@ document.querySelectorAll("#speakerMode button").forEach((b) =>
   b.addEventListener("click", () => setSpeakerMode(b.dataset.mode))
 );
 $("btnAgain").addEventListener("click", startMeeting);
+$("btnPractice").addEventListener("click", () => openPractice("voices"));
+$("btnPracticeAgain").addEventListener("click", () => openPractice("summary"));
+$("prForm").addEventListener("submit", checkPractice);
+$("prNext").addEventListener("click", nextPractice);
+$("prQuit").addEventListener("click", () => showScreen(state.practice ? state.practice.back : "voices"));
 $("btnHome").addEventListener("click", () => { updateQuickStart(); showScreen("start"); });
 
 $("testWho").addEventListener("click", () => {

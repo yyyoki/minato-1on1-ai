@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ミナト｜1on1見守りAI</title>
-  <link rel="stylesheet" href="/static/style.css?v=16">
+  <link rel="stylesheet" href="/static/style.css?v=18">
 </head>
 <body>
 <div id="app" data-screen="start">
@@ -175,7 +175,7 @@
               <button type="button" data-voice="on" role="radio">声で話す</button>
               <button type="button" data-voice="off" role="radio">画面だけ</button>
             </div>
-            <small class="muted">面談中も切り替えられます（キー V）</small>
+            <small class="muted">「声で話す」だと、部下が自分を責めたときも短く声で話しかけます（60秒に1回まで）。面談中も切り替えられます（キー V）</small>
           </div>
         </div>
 
@@ -314,6 +314,7 @@
 
         <div class="cta-row center">
           <button class="btn btn-primary btn-lg" id="btnStartMeeting" type="button">ミナトを同席させて面談を開始</button>
+          <button class="btn btn-ghost btn-lg" id="btnPractice" type="button">面談の前に：受け取り方の練習（5問）</button>
         </div>
         <p class="hint" id="voicesHint">自動の判定を間違えたときは、会話ログの名前の札をクリックすると直せます。</p>
         <p class="hint privacy-hint">保存するのは声の特徴を表す数値だけで、このブラウザのメモリにだけ置きます。録音した音声は保存しません。文字起こしのため、マイクと会議の音はChromeの音声認識（Google）に送られます。</p>
@@ -383,8 +384,15 @@
 
           <div class="speech" id="speech" hidden>
             <p class="speech-intent" id="speechIntent" hidden></p>
+            <p class="speech-skill" id="speechSkill" hidden></p>
             <p class="speech-cushion" id="speechCushion"></p>
             <p class="speech-text" id="speechText"></p>
+            <div class="speech-objective" id="speechObjective" hidden>
+              <p><small>起きたこと（事実）</small><span id="objFact"></span></p>
+              <p><small>いま浮かんでいる評価の言葉</small><span id="objJudge"></span></p>
+              <p class="obj-q"><small>ミナトからの問い</small><span id="objQuestion"></span></p>
+            </div>
+            <p class="speech-reply" id="speechReply" hidden><small id="speechReplyLabel">言えるひとこと</small><span id="speechReplyText"></span></p>
             <div class="speech-feedback" id="speechFeedback" hidden>
               <button type="button" data-feedback="good">助かった</button>
               <button type="button" data-feedback="bad">今のは不要</button>
@@ -448,6 +456,13 @@
           <div class="stat card"><span class="stat-label">ミナトのひとこと</span><span class="stat-value" id="smInterv">0</span></div>
         </div>
 
+        <div class="card receive-summary">
+          <h3 class="card-title">自分を責めないためのふりかえり</h3>
+          <p class="body-text" id="smReceiveText"></p>
+          <p class="notice" id="smReceiveBoss" hidden></p>
+          <button class="btn btn-ghost" id="btnPracticeAgain" type="button">受け取り方の練習をする（5問）</button>
+        </div>
+
         <div class="card">
           <h3 class="card-title">話していた割合（文字数）</h3>
           <div class="ratio" id="smRatio">
@@ -486,6 +501,42 @@
         </div>
       </div>
     </section>
+    <!-- 受け取り方の練習 -->
+    <section class="screen" data-screen="practice" hidden>
+      <div class="narrow-wide">
+        <div class="card practice">
+          <p class="eyebrow">受け取り方の練習 <span id="prProgress"></span></p>
+          <h2 class="card-title">厳しい一言に、自分を責めずに返す練習です</h2>
+          <p class="body-text">Google のエンジニア向けの手引きには、指摘する側だけでなく<b>受け取る側</b>の心構えも書かれています（指摘は人ではなく仕事に向けたもの、として受け取る など）。ミナトはそれを4つの型にまとめました。</p>
+          <ul class="skill-list">
+            <li><b>分ける</b>人ではなく、行動・仕事の話として受け取る</li>
+            <li><b>取り出す</b>言い方が強くても、直してほしい中身を拾う</li>
+            <li><b>確かめる</b>分からない所は、どの部分か具体的に聞く</li>
+            <li><b>伝える</b>自分の事情や考えを、落ち着いて伝える</li>
+          </ul>
+          <div class="practice-boss">
+            <span class="who who-boss">上司</span>
+            <p id="prBoss"></p>
+          </div>
+          <form id="prForm" autocomplete="off">
+            <label class="field"><span>あなたなら、どう返しますか？（入力した文は保存しません）</span>
+              <textarea id="prReply" rows="2" maxlength="200" placeholder="例：すみません、私がダメで…（思ったままでも大丈夫です）"></textarea></label>
+            <div class="cta-row">
+              <button class="btn btn-primary" id="prCheck" type="submit">ミナトに見てもらう</button>
+              <button class="btn btn-ghost" id="prNext" type="button" hidden>次の問題へ</button>
+              <button class="btn-text" id="prQuit" type="button">練習をやめる</button>
+            </div>
+          </form>
+          <div class="practice-result" id="prResult" aria-live="polite" hidden>
+            <p class="pr-message" id="prMessage"></p>
+            <div class="pr-skills" id="prSkills"></div>
+            <p class="pr-rewrite" id="prRewrite" hidden></p>
+            <p class="pr-model"><small>返しの例</small><span id="prModel"></span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 音声の計測テスト -->
     <section class="screen" data-screen="measure" hidden>
       <div class="narrow-wide">
@@ -613,7 +664,7 @@
 <script src="/static/metrics.js?v=12"></script>
 <script src="/static/audio.js?v=15"></script>
 <script src="/static/stage_link.js?v=3"></script>
-<script src="/static/app.js?v=19"></script>
+<script src="/static/app.js?v=24"></script>
 <script src="/static/measure.js?v=12"></script>
 </body>
 </html>

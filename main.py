@@ -285,7 +285,7 @@ def build_system_prompt(config: dict, meta: dict | None = None) -> str:
         "high": "軽い指摘でも、対象者が傷つく可能性があれば介入する",
     }
 
-    return f"""あなたは1on1面談に同席するAIキャラクターです。上司の言葉と部下の受け取り方のすれ違いを、短い一言で橋渡しします。
+    return f"""あなたは1on1面談に同席するAIキャラクターです。上司の言葉を言い直すのではなく、部下が自分を否定せずに指摘を受け取れるよう、その場で「受け取り方」を短く促すコーチです。
 
 【あなたの人格】
 - 名前: {persona['name']}
@@ -310,15 +310,23 @@ def build_system_prompt(config: dict, meta: dict | None = None) -> str:
 - 上司自身の謝罪、感謝、気遣いには介入しない
 - この部下なら問題なく受け取れる発言には介入しない
 
+【受け取り方の4つの型】（受け手の訓練の考え方。指摘は人ではなく仕事に向けたもの、として受け取る）
+- 分ける：人ではなく、行動・仕事の話として受け取る
+- 取り出す：言い方が強くても、直してほしい中身を拾う
+- 確かめる：分からない所は、どの部分か具体的に聞く
+- 伝える：自分の事情や考えを、落ち着いて伝える
+
 【reframed_speech の書き方】
-- 部下に向けて話す。上司への助言や評価はしない
-- 上司の指摘の中身は消さない。部下が自分を否定せず、「起きたこと」と「自分の評価」を分けて受け取れるようにする
-- 「上司の意図の推測」＋「部下が自分の状況を客観視できる短い問い」の2文
-- 意図は断定せず「〜だと思います」「〜かもです」と言う
+- 部下に向けて話す。上司の言葉の言い直しや、上司の意図の代弁はしない
+- 上司の指摘の中身は消さない。部下が自分を否定せず、中身だけを受け取れるようにする
+- 上の4つの型から、この場面に合う1つを「〜しましょう」「〜場面です」と促し、部下が次に言えることにつながる短い問いを添える（2文）
+- 人格・能力を否定する言葉に対しては、受け取るよう促さない。「あなたの価値の話ではない」と伝え、行動の話に分ける
+- 「受け取り方が悪い」「前向きに」など、部下に責任を移す言葉は使わない
 - 38文字以内。呼びかけの言葉は付けない
 - 性格、タイプ、特性、傾向に関する言葉は使わない
 
-boss_tip には、上司だけが画面で読む言い換えの提案を60文字以内で書きます。上司の事前に伝えたいことがある場合は、それが部下に届く言い方を提案します。介入しない場合、reframed_speech と boss_tip は空文字にします。"""
+reply_example には、部下がそのまま口に出せる返しを40文字以内で書きます（「〜教えてもらえますか？」など）。
+boss_tip には、上司だけが画面で読む言い換えの提案を60文字以内で書きます。人ではなく行動について、理由を添えて伝える言い方を提案します。介入しない場合、reframed_speech・reply_example・boss_tip は空文字にします。"""
 
 
 VERDICT_SCHEMA = {
@@ -328,9 +336,10 @@ VERDICT_SCHEMA = {
         "risk_level": {"type": "string", "enum": ["none", "low", "medium", "high"]},
         "reason": {"type": "string"},
         "reframed_speech": {"type": "string"},
+        "reply_example": {"type": "string"},
         "boss_tip": {"type": "string"},
     },
-    "required": ["should_intervene", "risk_level", "reason", "reframed_speech", "boss_tip"],
+    "required": ["should_intervene", "risk_level", "reason", "reframed_speech", "reply_example", "boss_tip"],
     "additionalProperties": False,
 }
 
@@ -492,63 +501,104 @@ CLAUSE_SPLIT = (r"[、。，．,.!！?？\s]+|だけど|けれど|けど"
 
 CUSHION_PHRASES = ["あの、", "えっと、"]
 
-# ミナトが声で話すセリフ。部下に向けて「上司の意図の推測＋問い」を短く伝える。
-# 性格の話は一切しない（プロダクト方針）。呼びかけ込みで40字以内
+# 受け取り方の4つの型（Google のコードレビューの手引き「レビューコメントへの対処の仕方」の受け手の原則を元にした）
+# 部下を採点しない。できたことだけ数える（発注書 v12・critic）
+RECEIVE_SKILLS = {
+    "separate": {"label": "分ける", "desc": "人ではなく、行動・仕事の話として受け取る",
+                 "praise": "行動と次の一手で話せています"},
+    "extract": {"label": "取り出す", "desc": "言い方が強くても、直してほしい中身を拾う",
+                "praise": "指摘の中身を取り出せています"},
+    "clarify": {"label": "確かめる", "desc": "分からない所は、どの部分か具体的に聞く",
+                "praise": "具体的に確かめられています"},
+    "explain": {"label": "伝える", "desc": "自分の事情や考えを、落ち着いて伝える",
+                "praise": "自分の事情を伝えられています"},
+}
+SKILL_KEYS = list(RECEIVE_SKILLS)
+
+# 上司の言い方の種類ごとに、部下が使うとよい受け取り方の型
+# 人格・能力の否定（personal_attack）は受け取る練習の対象にしないので、型を割り当てない（発注書 v12・critic、レビュー指摘6）
+CATEGORY_SKILL = {
+    "accusatory_why": "explain",
+    "common_sense_push": "clarify",
+    "pressure": "explain",
+    "denial": "extract",
+    "repetition_blame": "separate",
+    "vague_demand": "clarify",
+    "disappointment": "extract",
+    "sigh_tone": "separate",
+}
+
+# ミナトが声で話すセリフ。上司の言葉を言い直すのではなく、部下に「受け取り方の型」をその場で促す。
+# 人格・能力の否定は受け取る練習の対象にしない（「あなたの価値の話ではない」と言い切る）。
+# 性格の話は一切しない（CEO方針）。呼びかけ込みで40字以内
 MINATO_LINES = {
     "personal_attack": {
-        "perfectionist": "人として否定する話じゃないと思います。直したい行動はどれでしょう？",
-        "logical": "行動の話をしたいんだと思います。具体的にはどの場面のことでしょう？",
-        "sensitive": "あなた自身の否定じゃないと思います。どの場面の話か聞いてみませんか？",
-        "independent": "力を疑っている話じゃないと思います。どこを変えたいか聞いてみませんか？",
+        "perfectionist": "あなたの価値の話ではないです。そのまま受け止めなくて大丈夫です",
+        "logical": "人への評価は受け止めなくて大丈夫です。行動の話かだけ見ましょう",
+        "sensitive": "あなたの価値の話ではないです。そのまま受け止めなくて大丈夫です",
+        "independent": "力の否定は受け止めなくて大丈夫です。行動の話かだけ見ましょう",
     },
     "accusatory_why": {
-        "perfectionist": "責める話じゃないと思うんです。どの時点なら声をかけやすいですか？",
-        "logical": "経緯を知りたいんだと思います。どこで判断が分かれました？",
-        "sensitive": "怒ってるのとは違うと思います。一番困ったのはどの場面でした？",
-        "independent": "やり方を責める話じゃないと思います。どこで判断しました？",
+        "perfectionist": "経緯を伝える場面です。迷った時点から話してみませんか？",
+        "logical": "事情を伝える場面です。判断の理由を順に話してみませんか？",
+        "sensitive": "経緯を伝える場面です。困った場面からゆっくり話せそうですか？",
+        "independent": "判断の理由を伝える場面です。どう考えて決めたか話せそうですか？",
     },
     "common_sense_push": {
-        "perfectionist": "できてない話じゃないと思います。どこを揃えたいか話せそうですか？",
-        "logical": "やり方を揃えたいんだと思います。今の進め方の理由は何でした？",
-        "sensitive": "一緒に確認したいんだと思います。迷ったところはありますか？",
-        "independent": "進め方をそろえたいんだと思います。今のやり方の狙いは何でした？",
+        "perfectionist": "基準を確かめる場面です。揃えたい所を聞いてみませんか？",
+        "logical": "基準を確かめましょう。何を揃えたいのか聞いてみませんか？",
+        "sensitive": "確かめれば大丈夫です。揃えたい所を一つ聞いてみませんか？",
+        "independent": "基準を確かめる場面です。狙いを伝えて、揃える所を聞きませんか？",
     },
     "pressure": {
-        "perfectionist": "全部じゃなくて大丈夫かもです。まずどこまでなら見せられそうですか？",
-        "logical": "見通しを知りたいんだと思います。残りの作業はどれくらいですか？",
-        "sensitive": "心配してくれてるんだと思います。今止まってるのはどこですか？",
-        "independent": "見通しを共有したいんだと思います。いつ頃なら見せられそうですか？",
+        "perfectionist": "今の状況を伝える場面です。終わった所から話せそうですか？",
+        "logical": "見通しを伝える場面です。残りの作業と期限を話せそうですか？",
+        "sensitive": "状況を伝えれば大丈夫です。止まっている所を話せそうですか？",
+        "independent": "見通しを伝える場面です。いつ見せられるか話してみませんか？",
     },
     "denial": {
-        "perfectionist": "直したいのは一部だと思います。うまくいった所はどこでした？",
-        "logical": "気になる点があるんだと思います。どの部分か確かめてみませんか？",
-        "sensitive": "全部がだめって話じゃないと思います。一番気になる所はどこですか？",
-        "independent": "全部を否定する話じゃないと思います。直したいのはどの部分でしょう？",
+        "perfectionist": "直す中身を取り出しましょう。一番の所はどこか聞きませんか？",
+        "logical": "中身を取り出しましょう。どの部分のことか確かめませんか？",
+        "sensitive": "全部ではなく中身を取り出しましょう。一番の所を聞きませんか？",
+        "independent": "直す中身を取り出しましょう。どの部分か聞いてみませんか？",
     },
     "repetition_blame": {
-        "perfectionist": "仕組みで防ぎたいんだと思います。どの手順で止まりやすいですか？",
-        "logical": "原因を揃えたいんだと思います。前回と違った条件は何でした？",
-        "sensitive": "一緒に防ぎたいんだと思います。つまずきやすいのはどこですか？",
-        "independent": "仕組みで防ぎたいんだと思います。自分ならどう防ぎますか？",
+        "perfectionist": "人ではなく手順の話に分けましょう。止まる所を一緒に見ませんか？",
+        "logical": "手順の話に分けましょう。前回と違った条件を話せそうですか？",
+        "sensitive": "手順の話に分けましょう。つまずく所を一緒に見てもらいませんか？",
+        "independent": "手順の話に分けましょう。自分の防ぎ方を伝えてみませんか？",
     },
     "vague_demand": {
-        "perfectionist": "全部じゃなく一点だと思います。まずどこを整えたいですか？",
-        "logical": "基準を揃えたいんだと思います。どこが曖昧でした？",
-        "sensitive": "心配なんだと思います。今いちばん不安なのはどこですか？",
-        "independent": "期待の基準をそろえたいんだと思います。どこまでやれば十分ですか？",
+        "perfectionist": "具体的に確かめましょう。何をすれば十分か聞いてみませんか？",
+        "logical": "基準を確かめましょう。どこまでやれば十分か聞いてみませんか？",
+        "sensitive": "確かめれば大丈夫です。まず一つだけ何をするか聞きませんか？",
+        "independent": "基準を確かめましょう。十分な所を聞いて、進め方を伝えませんか？",
     },
     "disappointment": {
-        "perfectionist": "期待があるからだと思います。次に試したいことはありますか？",
-        "logical": "期待との差を話したいんだと思います。どこがずれてそうですか？",
-        "sensitive": "見放す話じゃないと思います。今の気持ちを話せそうですか？",
-        "independent": "任せたい気持ちがあるからだと思います。次はどう進めたいですか？",
+        "perfectionist": "期待の中身を取り出しましょう。次に何を求めているか聞きませんか？",
+        "logical": "期待の中身を取り出しましょう。どこがずれたか確かめませんか？",
+        "sensitive": "期待の中身を取り出しましょう。次に何をすればいいか聞きませんか？",
+        "independent": "期待の中身を取り出しましょう。次の進め方を伝えてみませんか？",
     },
     "sigh_tone": {
-        "perfectionist": "少し考え中なのかもです。今どこで止まってるか話せそうですか？",
-        "logical": "言葉を探してるのかもです。状況を一度整理してみませんか？",
-        "sensitive": "怒ってるとは限らないかもです。今話しづらいことはありますか？",
-        "independent": "言葉を探しているのかもです。今の考えを先に伝えてみませんか？",
+        "perfectionist": "空気より言葉の中身を見ましょう。今の要点を聞いてみませんか？",
+        "logical": "空気より言葉の中身を見ましょう。要点を確かめてみませんか？",
+        "sensitive": "空気より言葉の中身を見ましょう。今の要点を聞いてみませんか？",
+        "independent": "空気より言葉の中身を見ましょう。今の考えを伝えてみませんか？",
     },
+}
+
+# 部下がそのまま言える返し（画面に出す「言えるひとこと」）
+REPLY_EXAMPLES = {
+    "personal_attack": "今の言い方はつらいです。直す点があれば具体的に教えてください。",
+    "accusatory_why": "経緯をお話しします。〇〇の時点で、△△と判断していました。",
+    "common_sense_push": "揃えたいのはどの部分か、例を教えてもらえますか？",
+    "pressure": "今ここまで終わっていて、残りは〇〇です。△日までに見せられます。",
+    "denial": "一番直すべきところはどこか、教えてもらえますか？",
+    "repetition_blame": "同じことが起きないように、確認の手順を一緒に決めてもらえますか？",
+    "vague_demand": "どこまでできていれば十分か、具体的に教えてもらえますか？",
+    "disappointment": "次はどうなっていれば期待に近づけるか、教えてもらえますか？",
+    "sigh_tone": "今いちばん気になっている点を教えてもらえますか？",
 }
 
 # 声に出してはいけない言葉（生成されたセリフの最終確認に使う）
@@ -742,11 +792,14 @@ SUBORDINATE_SIGNALS = [
         "id": "self_blame",
         "label": "自分を責める言葉",
         "patterns": [
-            r"(?:私|僕|自分|わたし|ぼく|俺)(?:が|の)(?:せい|責任|ダメ|だめ|悪い|悪かった|力不足)",
+            r"(?:私|僕|自分|わたし|ぼく|俺)(?:が|の)(?:せい|責任|ダメ|だめ|悪い|悪かった|悪く|力不足)",
             r"(?:私|僕|自分|わたし|ぼく|俺)の.{0,8}(?:が悪くて|が悪かった|が甘かった|が足りなくて|が足りなかった)",
             r"(?:向いて(?:い)?ない|力不足|能力が(?:足りない|ない))",
             r"ダメ(?:な|だ)(?:人間|やつ|奴)",
             r"(?:どうせ|何をやっても|なにをやっても)",
+            r"(?:私|僕|自分|わたし|ぼく|俺)(?:は|って|なんて|なんか)(?:ダメ|だめ|無能|使えない|できない|役に立たない|向いて|バカ|馬鹿|情けない)",
+            r"(?:仕事が|何も|なにも|全然|ぜんぜん)(?:できない|出来ない)(?:人間|やつ|奴|です|だ)",
+            r"(?:情けない|ふがいない)", r"自分が(?:嫌|いや)になる", r"役に立てて(?:い)?ない",
         ],
         "hint": "部下さんが自分を責める言葉を使っています。まず「話してくれてありがとう」と受け止めてから、事実の話に戻すと安心しやすいです。",
         "forecast": {"perfectionist": "自分を責めているかも", "logical": "結論を急いでいるかも", "sensitive": "気持ちが沈んでいるかも", "independent": "結論を急いでいるかも"},
@@ -775,6 +828,64 @@ SUBORDINATE_SIGNALS = [
 ]
 
 
+SELF_NEG_ALL = [p for sig in SUBORDINATE_SIGNALS for p in sig["patterns"]]
+FILLER_CLAUSE = re.compile(r"^(?:はい|ええ|あの|えっと|その|いえ|でも|ただ|なので|それで|本当に|ほんとに|もう)$")
+SUB_CLAUSE_SPLIT = r"[、。，．,.!！?？…\s]+|けど|けれど|ので"
+
+
+def find_event_clause(text: str) -> str | None:
+    """自己否定の発言から「起きたこと」の節を取り出す（例：「資料の提出が遅れました」）。取れなければ None"""
+    clauses = [c.strip() for c in re.split(SUB_CLAUSE_SPLIT, text) if c and c.strip()]
+    events = []
+    for c in clauses:
+        # 「私がダメで遅れてしまいました」のように同じ節にある時は、自己否定の部分を外して出来事だけ残す
+        c = re.sub(r"^.*?(?:せいで|ダメで|だめで|悪くて|力不足で|が足りなくて|が甘くて)", "", c)
+        if not c or FILLER_CLAUSE.match(c) or any(re.search(p, c) for p in SELF_NEG_ALL):
+            continue
+        # 上司の行為（怒られた・言われた）は部下の出来事として言い直させない（レビュー指摘7）
+        if re.search(r"(?:られ|われ|され)ました$|上司|部長|課長|先輩", c):
+            continue
+        # 活用は変えずに、元の言い方のまま引用する（「怒ってしまいました」を壊さない。レビュー指摘4）
+        if 4 <= len(c) <= 18 and c.endswith(("ました", "でした", "ませんでした")):
+            events.append(c)
+    return events[0] if events else None
+
+
+OBJECTIVE_QUESTIONS = [
+    "それは起きた事実ですか？それとも、自分への評価ですか？",
+    "同じことを同僚がしたら、何と声をかけますか？",
+    "この出来事から、次に変えられることは何ですか？",
+]
+
+
+def self_rewrite(sig_id: str, text: str) -> dict:
+    """自己否定の発言を、自分を客観視する手がかりに変える（画面だけに出す）。
+    objective: 起きたこと / いま浮かんでいる評価の言葉 / 問い / 言い直しの例"""
+    event = find_event_clause(text)
+    judgement = ""
+    if sig_id == "self_blame":
+        for pat in SUBORDINATE_SIGNALS[0]["patterns"]:
+            m = re.search(pat, text)
+            if m:
+                judgement = m.group(0)
+                break
+        question = pick(OBJECTIVE_QUESTIONS, text)
+        if event:
+            return {"rewrite": f"「{event}」は起きたことで、あなたの価値とは別です。事実と評価を分けて見てみましょう。",
+                    "rewrite_example": f"「{event}。次は〇〇します」",
+                    "objective": {"fact": event, "judgement": judgement, "question": question}}
+        return {"rewrite": "起きたことと、自分への評価は分けて大丈夫です。事実と評価を分けて見てみましょう。",
+                "rewrite_example": "「〇〇が起きました。次は△△します」",
+                "objective": {"fact": "", "judgement": judgement, "question": question}}
+    if sig_id == "give_up":
+        return {"rewrite": "全部じゃなくて大丈夫です。分かっている所と、分からない所を分けて伝えてみませんか？",
+                "rewrite_example": "「〇〇までは分かっています。△△の所を教えてもらえますか？」"}
+    if sig_id == "over_apology":
+        return {"rewrite": "何度も謝らなくて大丈夫です。これからすることを一つ伝えてみませんか？",
+                "rewrite_example": "「ご指摘ありがとうございます。次は〇〇します」"}
+    return {"rewrite": "", "rewrite_example": ""}
+
+
 def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: str):
     for sig in SUBORDINATE_SIGNALS:
         if not any(re.search(p, text) for p in sig["patterns"]):
@@ -791,8 +902,55 @@ def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: 
             "hint": sig["hint"],
             "forecast": sig["forecast"].get(type_key, "様子を見たい場面です"),
             "reframe": sig.get("reframe", ""),
+            **self_rewrite(sig["id"], text),
         }
     return None
+
+
+# 部下の良い受け取り方（その場で小さく褒める。数えるだけで減点しない）
+RECEIVE_GOOD_PATTERNS = {
+    "separate": [
+        r"次(?:は|から|回は|回から)", r"今後は", r"これからは", r"(?:て|で)みます",
+        r"までに(?:出し|やり|仕上げ|終わらせ|直し|見せ|送り)", r"(?:手順|仕組み|確認)を(?:変え|決め|見直し|入れ|増や)",
+    ],
+    "extract": [
+        r"(?:つまり|要するに)", r"ポイントは", r"(?:直すべき|直す|変える)(?:ところ|点|の)は",
+        r"(?:ご指摘|指摘)(?:ありがとう|いただいた|の点|いただき)", r"なるほど", r"ということは",
+    ],
+    "clarify": [
+        r"具体的に", r"どの(?:部分|あたり|点|ところ|辺|場面)", r"例えば", r"ということ(?:です|でしょう)か",
+        r"(?:確認|質問)(?:させて|してもいい|しても|します)", r"教えて(?:もらえ|いただけ|ください)",
+        r"どう(?:すれば|したら)(?:いい|良い|よい)", r"どこまで(?:やれば|できていれば)",
+    ],
+    "explain": [
+        r"(?:理由|経緯|背景|事情)(?:は|としては|をお話|を説明|を話)", r"(?:お話し|説明)(?:します|させて)",
+        r"と(?:判断|考え)(?:し|て)", r"つもりで", r"(?:優先|先に)(?:し|やっ)ていました",
+    ],
+}
+
+
+# 褒めてはいけない発言（自己否定・皮肉・強いつらさのサイン）。これらを含む発言は型として数えない（レビュー指摘1）
+NO_PRAISE_PATTERNS = [
+    r"無能", r"辞め", r"やめ(?:たい|ます|よう)", r"いなくな", r"消え", r"(?:全部|すべて|ぜんぶ)(?:私|僕|自分|俺)?(?:が|の)?(?:悪い|せい)",
+    r"価値(?:が|は)?(?:ない|無い)", r"いない方が", r"生きて", r"ってことですよね", r"ってことですね",
+]
+# 1発言で数える型は1つだけ（レビュー指摘5）。具体的な行動に近い順
+SKILL_PRIORITY = ["clarify", "explain", "extract", "separate"]
+
+
+def detect_receive_skills(text: str) -> list[dict]:
+    if any(re.search(p, text) for p in NO_PRAISE_PATTERNS + SELF_NEG_ALL):
+        return []
+    for key in SKILL_PRIORITY:
+        if any(re.search(p, text) for p in RECEIVE_GOOD_PATTERNS[key]):
+            s = RECEIVE_SKILLS[key]
+            return [{"id": key, "label": s["label"], "praise": s["praise"]}]
+    return []
+
+
+def skill_info(key: str) -> dict:
+    s = RECEIVE_SKILLS.get(key) or RECEIVE_SKILLS["separate"]
+    return {"id": key if key in RECEIVE_SKILLS else "separate", "label": s["label"], "desc": s["desc"]}
 
 
 def category_weights(config: dict, situation: str | None = None) -> dict:
@@ -946,6 +1104,9 @@ def get_dummy_response(transcript: str, config: dict, context: list[str] = None,
         "attack_score": final,
         "cushion_phrase": pick(CUSHION_PHRASES, transcript),
         "reframed_speech": MINATO_LINES[pattern_id].get(active_key) or MINATO_LINES[pattern_id]["perfectionist"],
+        "receive_skill": skill_info(CATEGORY_SKILL[pattern_id]) if pattern_id in CATEGORY_SKILL else None,
+        "receive_note": "" if pattern_id in CATEGORY_SKILL else "これは受け取る練習の対象ではありません（言い方の問題です）",
+        "reply_example": REPLY_EXAMPLES.get(pattern_id, ""),
         "boss_tip": pick(BOSS_TIPS[pattern_id], transcript),
         "meta_note": META_NOTES.get(pattern_id, {}).get(active_key, "配慮が必要な場面です"),
         "character_emotion": "gentle_smile",
@@ -1074,10 +1235,13 @@ def merge_claude(ai: dict, local: dict, config: dict) -> dict:
         merged.update({"should_intervene": False, "risk_level": "none", "character_emotion": "thinking"})
         return merged
     speech = (ai.get("reframed_speech") or "").strip()
+    reply = (ai.get("reply_example") or "").strip()
+    reply_ok = reply and len(reply) <= 40 and speech_is_safe(reply[:MAX_SPEECH_CHARS], config)
     merged.update({
         "should_intervene": True,
         "risk_level": ai.get("risk_level", "medium"),
         "reframed_speech": speech if speech_is_safe(speech, config) else local["reframed_speech"],
+        "reply_example": reply if reply_ok else local.get("reply_example", ""),
         "boss_tip": (ai.get("boss_tip") or "").strip() or local["boss_tip"],
     })
     return merged
@@ -1154,11 +1318,22 @@ def analyze(req: AnalyzeRequest):
     # 部下の発言は介入判定にかけない（ミナトが割り込む理由にならない）
     if speaker == "subordinate":
         signal = detect_subordinate_signal(masked_transcript, recent_sub, config.get("active_preset", "perfectionist"))
+        skills = detect_receive_skills(masked_transcript)
+        is_demo = req.speaker_source == "demo"
         if signal:
             session_log["subordinate_signals"].append({
                 "timestamp": datetime.now().isoformat(),
                 "transcript": req.transcript,
                 "signal": signal,
+                "demo": is_demo,
+            })
+        if skills:
+            # 話者を直したときに取り消せるよう、どの発言の分かを（メモリ上だけで）持つ。ディスクには回数だけ残す
+            session_log.setdefault("receive_skills", []).append({
+                "timestamp": datetime.now().isoformat(),
+                "skills": [s["id"] for s in skills],
+                "transcript": req.transcript,
+                "demo": is_demo,
             })
         return JSONResponse({
             "should_intervene": False,
@@ -1166,6 +1341,7 @@ def analyze(req: AnalyzeRequest):
             "risk_level": "none",
             "reason": f"部下の発言（{signal['label']}）" if signal else "部下の発言のため介入判定の対象外",
             "subordinate_signal": signal,
+            "receive_skills": skills,
             "sent_data": {"external_sent": False, "note": "部下の発言はこの時点では外部に送っていません"},
         })
 
@@ -1207,6 +1383,14 @@ async def speaker_correction(req: SpeakerCorrection):
             c["speaker"] = req.to_speaker
             c["corrected_from"] = req.from_speaker
             break
+    # 部下の発言ではなかった → その発言で数えた型とサインを取り消す（レビュー指摘2）
+    if req.from_speaker == "subordinate" and req.to_speaker != "subordinate":
+        for key in ("receive_skills", "subordinate_signals"):
+            rows = session_log.get(key, [])
+            for i in range(len(rows) - 1, -1, -1):
+                if rows[i].get("transcript") == req.transcript:
+                    del rows[i]
+                    break
     return JSONResponse({"status": "recorded"})
 
 
@@ -1315,6 +1499,8 @@ async def start_session(req: StartSessionRequest | None = None):
     session_log["conversations"] = []
     session_log["interventions"] = []
     session_log["subordinate_signals"] = []
+    session_log["receive_skills"] = []
+    session_log["receive_summary"] = None
     session_log["speaker_corrections"] = []
     session_log["turn_log"] = []
     session_log["metrics"] = []
@@ -1360,7 +1546,65 @@ def log_for_disk(log: dict, config: dict) -> dict:
         "turn_log": log.get("turn_log", []),
         "metrics": clean_metrics(log.get("metrics", [])),
         "meeting": log.get("meeting"),  # 状況と件数だけ。伝えたいことの本文は残さない
+        "receive_summary": log.get("receive_summary"),  # 受け取り方の回数だけ
     }
+
+
+RECEIVE_HISTORY_PATH = LOGS_DIR / "receive_history.json"
+SELF_NEG_SIGNALS = ("self_blame",)  # 「自分を責める言葉」として数えるのは自責だけ（謝罪・あきらめは混ぜない。レビュー指摘9）
+
+
+def receive_summary(log: dict) -> dict:
+    """受け取り方のふりかえり。回数だけで作る（発言の本文は使わない）。デモ会話は数えない（レビュー指摘3）"""
+    counts = {k: 0 for k in SKILL_KEYS}
+    for row in log.get("receive_skills", []):
+        if row.get("demo"):
+            continue
+        for k in row.get("skills", []):
+            if k in counts:
+                counts[k] += 1
+    self_neg = sum(1 for s in log.get("subordinate_signals", [])
+                   if not s.get("demo") and (s.get("signal") or {}).get("id") in SELF_NEG_SIGNALS)
+    real_iv = [i for i in log.get("interventions", []) if i.get("speaker_source") != "demo"]
+    personal = sum(1 for i in real_iv
+                   if i["result"].get("category_id") == "personal_attack" and i["result"].get("should_intervene"))
+    cues = {}
+    for i in real_iv:
+        r = i["result"]
+        if r.get("should_intervene") and r.get("category_id") in CATEGORY_SKILL:
+            k = CATEGORY_SKILL[r["category_id"]]
+            cues[k] = cues.get(k, 0) + 1
+    # 次の練習テーマ：ミナトが促したのに、まだ使えていない型 → なければ一番少ない型
+    pending = [k for k in SKILL_KEYS if cues.get(k) and not counts[k]]
+    focus = pending[0] if pending else min(SKILL_KEYS, key=lambda k: (counts[k], SKILL_KEYS.index(k)))
+    return {
+        "skills": counts,
+        "skills_total": sum(counts.values()),
+        "self_negation": self_neg,
+        "personal_attack_by_boss": personal,
+        "cues": cues,
+        "focus": focus,
+        "sub_utterances": sum(1 for c in log.get("conversations", [])
+                              if c.get("speaker") == "subordinate" and c.get("speaker_source") != "demo"),
+    }
+
+
+def load_receive_history() -> list[dict]:
+    try:
+        with open(RECEIVE_HISTORY_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def append_receive_history(summary: dict):
+    rows = load_receive_history()
+    rows.append({"date": datetime.now().isoformat(timespec="minutes"), **{k: summary[k] for k in
+                 ("skills", "skills_total", "self_negation", "personal_attack_by_boss", "sub_utterances")}})
+    LOGS_DIR.mkdir(exist_ok=True)
+    with open(RECEIVE_HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump(rows[-50:], f, ensure_ascii=False, indent=2)
 
 
 @app.post("/end-session")
@@ -1378,13 +1622,86 @@ def end_session(req: EndSessionRequest | None = None):
         "intent_covered": req.intent_covered if req and isinstance(req.intent_covered, int) else None,
     }
     session_log["metrics"] = clean_metrics(req.metrics if req else [])
+    summary = receive_summary(session_log)
+    session_log["receive_summary"] = summary
+    previous = load_receive_history()[-1:] or [None]
+    if summary["sub_utterances"]:
+        append_receive_history(summary)
     filename = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     filepath = LOGS_DIR / filename
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(log_for_disk(session_log, load_config()), f, ensure_ascii=False, indent=2)
 
     session_log["started_at"] = None
-    return JSONResponse({"status": "saved", "file": str(filepath)})
+    return JSONResponse({"status": "saved", "file": str(filepath), "receive": summary, "receive_previous": previous[0],
+                         "skill_labels": {k: v["label"] for k, v in RECEIVE_SKILLS.items()},
+                         "skill_descs": {k: v["desc"] for k, v in RECEIVE_SKILLS.items()}})
+
+
+# ---- 受け取り方の練習（面談の前に。入力した返しは保存しない） ----
+PRACTICE_ITEMS = [
+    {"id": "p1", "boss": "なんでもっと早く相談しなかったの？", "skill": "explain",
+     "model": "経緯をお話しします。水曜の時点で自分で直せると判断していました。次は迷った日に一度相談します。"},
+    {"id": "p2", "boss": "全然できてないじゃん", "skill": "extract",
+     "model": "一番直すべきところはどこか教えてもらえますか？そこから直します。"},
+    {"id": "p3", "boss": "もっとちゃんとやって", "skill": "clarify",
+     "model": "どこまでできていれば十分か、具体的に教えてもらえますか？"},
+    {"id": "p4", "boss": "何回言ったらわかるの", "skill": "separate",
+     "model": "同じことが起きないように、次から提出前に確認の手順を一つ入れます。"},
+    {"id": "p5", "boss": "期待してたのにがっかりだよ", "skill": "extract",
+     "model": "次はどうなっていれば期待に近づけるか、教えてもらえますか？"},
+]
+
+
+@app.get("/practice/items")
+def practice_items():
+    return JSONResponse({
+        "items": [{**it, "skill_label": RECEIVE_SKILLS[it["skill"]]["label"], "skill_desc": RECEIVE_SKILLS[it["skill"]]["desc"]}
+                  for it in PRACTICE_ITEMS],
+        "skills": {k: {"label": v["label"], "desc": v["desc"]} for k, v in RECEIVE_SKILLS.items()},
+    })
+
+
+class PracticeCheck(BaseModel):
+    item_id: str
+    reply: str
+
+
+@app.post("/practice/check")
+def practice_check(req: PracticeCheck):
+    item = next((it for it in PRACTICE_ITEMS if it["id"] == req.item_id), None)
+    if not item:
+        return JSONResponse({"error": "unknown item"}, status_code=400)
+    reply = (req.reply or "").strip()[:200]
+    skills = detect_receive_skills(reply)
+    # 練習は1回の返しだけを見る（「すみません」1回を謝罪の連続と数えない。レビュー指摘9）
+    signal = detect_subordinate_signal(reply, [], "perfectionist") if reply else None
+    got = {s["id"] for s in skills}
+    target = RECEIVE_SKILLS[item["skill"]]
+    signal_msg = {
+        "self_blame": "自分を責める言葉が入っています。指摘は仕事についての話なので、行動と次の一手で言い直してみましょう。",
+        "give_up": "「分からない」「無理」で止まっても大丈夫です。分かっている所と分からない所を分けて伝えてみましょう。",
+    }
+    if not reply:
+        message = "思いついた返しを、そのまま書いてみてください。"
+    elif signal and signal["id"] in signal_msg and not skills:
+        message = signal_msg[signal["id"]]
+    elif item["skill"] in got:
+        message = f"いいですね！「{target['label']}」ができています。"
+    elif skills:
+        message = f"「{'」「'.join(s['label'] for s in skills)}」ができています。この場面は「{target['label']}」（{target['desc']}）も試せます。"
+    else:
+        message = f"この場面は「{target['label']}」がおすすめです。{target['desc']}。"
+    return JSONResponse({
+        "message": message,
+        "skills": skills,
+        "self_negation": bool(signal and signal["id"] in SELF_NEG_SIGNALS),
+        "rewrite": signal.get("rewrite") if signal else "",
+        "rewrite_example": signal.get("rewrite_example") if signal else "",
+        "target": {"id": item["skill"], "label": target["label"], "desc": target["desc"]},
+        "model": item["model"],
+        "saved": False,
+    })
 
 
 class MeasureRequest(BaseModel):
