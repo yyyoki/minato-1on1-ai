@@ -29,7 +29,7 @@
 ## 構成
 
 ```
-Zoom会議（上司・部下・ミナトPC）
+Zoom会議（上司・部下・view viewPC）
    │ meeting.rtms_started（Webhook）
    ▼
 このアプリのサーバー /zoom/webhook ── 署名を検証・URL確認に応答
@@ -37,13 +37,13 @@ Zoom会議（上司・部下・ミナトPC）
    ▼
 Zoom RTMS ── 文字起こし（user_name つき）──▶ /ingest と同じ処理
    │                                              │ Zoomの表示名 → 上司／部下（設定で登録）
-   │                                              │ ミナトPCの名前は無視
+   │                                              │ view viewPCの名前は無視
    ▼                                              ▼
                                          /events（SSE）で面談画面へ
                                                   │
-                                    いつもの判定（上司の発言だけ）→ ミナトが話す
+                                    いつもの判定（上司の発言だけ）→ view viewが話す
                                                   │
-                         ミナトの声は、今まで通り独立PCからZoomに流す
+                         view viewの声は、今まで通り独立PCからZoomに流す
 ```
 
 - **/ingest**：Zoomに限らず「話者名つきの発言」を受け取る入口。模擬データのテストにも使う
@@ -51,7 +51,7 @@ Zoom RTMS ── 文字起こし（user_name つき）──▶ /ingest と同�
 - 面談画面は「Zoom連携」がオンだと、Chromeの音声認識を止め、Zoomからの発言だけを使う
 
 ## マンガー（失敗の先回り）
-1. **ミナト自身の声が「発言」として返ってくる** → ミナトPCのZoom表示名を無視リストに入れる
+1. **view view自身の声が「発言」として返ってくる** → view viewPCのZoom表示名を無視リストに入れる
 2. **表示名が登録と違う**（「山田 太郎」と「山田太郎」など）→ 空白を無視して比べる。知らない名前は「上司?」として表示し、名札クリックで直せる（今の仕組みのまま）
 3. **文字起こしが細切れで届く** → 同じ人の発言は 1.2秒途切れるまでまとめてから判定する
 4. **Webhookが外から届かない**（PCがインターネットから見えない）→ 開発中は ngrok などで公開URLを作る。本番はサーバーに置くか検討
@@ -77,7 +77,7 @@ Zoom RTMS ── 文字起こし（user_name つき）──▶ /ingest と同�
 2. Zoom App Marketplace で General app を作り、RTMSのイベント（RTMS Started／Stopped）とスコープ `meeting:read:meeting_transcript` を追加
 3. アプリの Client ID / Client Secret / Webhookの Secret Token を `.env` に書く（`ZM_RTMS_CLIENT` / `ZM_RTMS_SECRET` / `ZOOM_WEBHOOK_SECRET_TOKEN`）
 4. `pip install rtms` と、ngrok などで `http://127.0.0.1:8001` を公開し、そのURL＋`/zoom/webhook` をイベント通知先に登録
-5. アプリの設定で、上司・部下・ミナトPCのZoom表示名を登録
+5. アプリの設定で、上司・部下・view viewPCのZoom表示名を登録
 
 ## 参考
 - Zoom RTMS 一般提供：https://developers.zoom.us/changelog/rtms/june-25-2025/
