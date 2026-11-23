@@ -116,7 +116,7 @@ def _ingest(user_name: str, text: str, source: str, final: bool):
         buf["text"] = prev + text
     if buf["timer"]:
         buf["timer"].cancel()
-    # 文字が届いている＝誰かが話している。ミナトが話し出さないための合図（本文は含めず、文字数だけ）
+    # 文字が届いている＝誰かが話している。view viewが話し出さないための合図（本文は含めず、文字数だけ）
     _publish({"type": "activity", "speaker": speaker, "chars": len(re.sub(r"\s", "", buf["text"])), "at": time.time()})
     if final:
         _flush(user_name)

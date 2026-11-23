@@ -242,7 +242,7 @@ test("Zoom：短い相づちの合図では止まらず、長い発話では止�
   ok(run(build(8), { textOnly: true, playAfter: 50 }).has("stop"), "長い発話で止まらない");
 });
 for (const reply of ["今止まってるのは集計です", "止まってるのは集計のところです"]) {
-  test(`ミナトの問いへの返答は消さない：${reply}`, () => {
+  test(`view viewの問いへの返答は消さない：${reply}`, () => {
     const r = run(speakingAsk().quiet(3400, 6000).add(5300, "final", { uttId: 2, text: reply, who: "subordinate" }), { playAfter: 50, playMs: 1500 });
     ok(r.has("done") && !r.has("dropEcho"), "返答を自分の声として捨てた");
   });
@@ -355,16 +355,16 @@ test("句末の分類", () => {
   const t = { "なんで相談しなかったの": "question", "どう思いますか": "question", "全然できてないじゃん": "complete", "それは違うと思います": "complete", "分かるんだけど": "trailing", "遅れたので": "trailing", "もっとちゃんとやって": "trailing", "資料": "unknown", "なんで相談しなかったのとか": "trailing", "それでなんか": "trailing", "ええと、あの": "trailing", "その": "trailing", "部長の": "trailing", "全然できてないじゃん、お客さんの": "trailing", "田中さんの": "trailing", "みんなの": "trailing", "あなたの": "trailing", "そうなの": "question" };
   for (const [k, v] of Object.entries(t)) ok(classifyTail(k) === v, `${k} → ${classifyTail(k)}（期待 ${v}）`);
 });
-test("ミナト用PCで話すときは、話し出しの遅れを長めに待つ", () => {
-  // 普段は1.5秒で諦めるが、ミナト用PC（Wi-Fi越しの合成・再生）では2.5秒遅れても話す
+test("view view用PCで話すときは、話し出しの遅れを長めに待つ", () => {
+  // 普段は1.5秒で諦めるが、view view用PC（Wi-Fi越しの合成・再生）では2.5秒遅れても話す
   const local = run(speaking().quiet(3400, 9000), { playAfter: 2500, playMs: 2000 });
   ok(local.has("stop", (a) => a.why === "late"), "このPCで話すときに、遅れても諦めなかった");
   const remote = run(speaking().add(0, "mode", { remoteVoice: true }).quiet(3400, 9000), { playAfter: 2500, playMs: 2000 });
-  ok(!remote.has("stop") && remote.has("done"), "ミナト用PCで話すときに、2.5秒の遅れで諦めた");
+  ok(!remote.has("stop") && remote.has("done"), "view view用PCで話すときに、2.5秒の遅れで諦めた");
   const tooLate = run(speaking().add(0, "mode", { remoteVoice: true }).quiet(3400, 12000), { playAfter: 5000, playMs: 2000 });
-  ok(tooLate.has("stop", (a) => a.why === "late"), "ミナト用PCでも、遅れすぎたら諦める");
+  ok(tooLate.has("stop", (a) => a.why === "late"), "view view用PCでも、遅れすぎたら諦める");
 });
-test("ミナト用PCの声（音量が測れない）は、音だけでは止まらない", () => {
+test("view view用PCの声（音量が測れない）は、音だけでは止まらない", () => {
   const s = speaking().add(0, "mode", { remoteVoice: true });
   s.add(3550, "playStart", { speakId: 1, levelOk: false });
   for (let t = 3600; t < 6000; t += 40) s.add(t, "frame", { speech: true, rms: 1, ref: null });

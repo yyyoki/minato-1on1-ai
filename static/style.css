@@ -942,7 +942,7 @@ kbd { font-family: inherit; font-size: 10px; color: var(--muted); border: 1px so
 .person[data-mood="relieved"] .p-sparkle { opacity: 1; }
 .person[data-mood="relieved"] .p-body { animation: p-bob .3s ease-in-out 4 alternate; }
 
-/* ミナトの話を聞いている（ミナトの方へ首をかしげて、うなずく） */
+/* view viewの話を聞いている（view viewの方へ首をかしげて、うなずく） */
 .person[data-mood="listening"] .p-head { rotate: 6deg; animation: nod 1.8s ease-in-out infinite; }
 .person[data-role="subordinate"][data-mood="listening"] .p-head { rotate: -6deg; }
 @keyframes nod { 0%, 100% { translate: 0 0; } 50% { translate: 0 3px; } }

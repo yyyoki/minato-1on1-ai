@@ -75,7 +75,7 @@ class LocalOnly:
     def host_ok(cls, name):
         return name in cls.ALLOWED or bool(name and cls.SUFFIXES and name.endswith(cls.SUFFIXES))
 
-    # ミナト用PC（同じWi-Fiの別のパソコン）から開いてよいもの。STAGE_LAN=1 で起動したときだけ
+    # view view用PC（同じWi-Fiの別のパソコン）から開いてよいもの。STAGE_LAN=1 で起動したときだけ
     STAGE_PATHS = {"/stage", "/stage/events", "/stage/report",
                    "/static/stage.js", "/static/mofu.js", "/static/audio.js", "/static/style.css", "/tts", "/tts/status"}
     LOOPBACK = {"127.0.0.1", "::1"}
@@ -528,7 +528,7 @@ CATEGORY_SKILL = {
     "sigh_tone": "separate",
 }
 
-# ミナトが声で話すセリフ。上司の言葉を言い直すのではなく、部下に「受け取り方の型」をその場で促す。
+# view viewが声で話すセリフ。上司の言葉を言い直すのではなく、部下に「受け取り方の型」をその場で促す。
 # 人格・能力の否定は受け取る練習の対象にしない（「あなたの価値の話ではない」と言い切る）。
 # 性格の話は一切しない（CEO方針）。呼びかけ込みで40字以内
 MINATO_LINES = {
@@ -1315,7 +1315,7 @@ def analyze(req: AnalyzeRequest):
             "masked": masked_transcript,
         })
 
-    # 部下の発言は介入判定にかけない（ミナトが割り込む理由にならない）
+    # 部下の発言は介入判定にかけない（view viewが割り込む理由にならない）
     if speaker == "subordinate":
         signal = detect_subordinate_signal(masked_transcript, recent_sub, config.get("active_preset", "perfectionist"))
         skills = detect_receive_skills(masked_transcript)
@@ -1574,7 +1574,7 @@ def receive_summary(log: dict) -> dict:
         if r.get("should_intervene") and r.get("category_id") in CATEGORY_SKILL:
             k = CATEGORY_SKILL[r["category_id"]]
             cues[k] = cues.get(k, 0) + 1
-    # 次の練習テーマ：ミナトが促したのに、まだ使えていない型 → なければ一番少ない型
+    # 次の練習テーマ：view viewが促したのに、まだ使えていない型 → なければ一番少ない型
     pending = [k for k in SKILL_KEYS if cues.get(k) and not counts[k]]
     focus = pending[0] if pending else min(SKILL_KEYS, key=lambda k: (counts[k], SKILL_KEYS.index(k)))
     return {
@@ -1720,7 +1720,7 @@ def save_measure(req: MeasureRequest):
 
 LOGIN_HTML = """<!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ミナト｜合言葉</title>
+<title>view view｜合言葉</title>
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#FBF7F2;color:#2B2522;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
 form{width:min(92vw,380px);background:#fff;border:1px solid #EDE5DC;border-radius:20px;padding:28px 24px;display:grid;gap:14px;box-shadow:0 8px 30px rgba(43,37,34,.06)}
@@ -1730,7 +1730,7 @@ button{font:inherit;font-weight:700;padding:13px;border:0;border-radius:999px;ba
 .err{color:#D2504B;font-weight:600}
 </style></head><body>
 <form method="post" action="/login">
-<h1>ミナト（1on1見守りAI）</h1>
+<h1>view view（1on1見守りAI）</h1>
 <p>合言葉を入力してください。</p>
 {{MSG}}
 <input type="password" name="password" autocomplete="current-password" autofocus required aria-label="合言葉">

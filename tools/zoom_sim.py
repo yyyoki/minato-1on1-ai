@@ -24,7 +24,7 @@ def main():
     cfg = json.load(urllib.request.urlopen(BASE + "/config")).get("zoom") or {}
     boss = cfg.get("boss_name") or "上司"
     sub = cfg.get("subordinate_name") or "部下"
-    mofu = (cfg.get("ignore_names") or "ミナト").split(",")[0].strip()
+    mofu = (cfg.get("ignore_names") or "view view").split(",")[0].strip()
     gap = 0.6 if fast else 2.5
 
     # (表示名, 文字起こしの断片たち)。RTMSは細切れで届くことがあるので、わざと分けて送る
@@ -32,7 +32,7 @@ def main():
         (boss, ["先週お願いした資料、", "進捗どうなってる？"]),
         (sub, ["すみません…私の段取りが悪くて、", "まだ半分くらいです"]),
         (boss, ["なんでもっと早く", "相談しなかったの？"]),
-        (mofu, ["あ、すみません〜ちょっといいですか！"]),          # ミナトPC自身の声 → 無視されるはず
+        (mofu, ["あ、すみません〜ちょっといいですか！"]),          # view viewPC自身の声 → 無視されるはず
         (boss, ["そうだね。どういう経緯だったか教えてもらえる？"]),
         ("ゲスト参加者", ["失礼します、少しだけ聞かせてください"]),  # 未登録の名前 → 上司?として表示
         (sub, ["データの集計で迷っていて、", "どこまで調べればいいか分からなくなっていました"]),

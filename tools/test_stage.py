@@ -1,4 +1,4 @@
-"""ミナト用PC（別のパソコン）との中継のテスト。  python3 tools/test_stage.py
+"""view view用PC（別のパソコン）との中継のテスト。  python3 tools/test_stage.py
 - ほかのPCから届くのは、合言葉つきのステージ画面・その部品・声の取得・報告だけか
 - 名乗り（Host）を偽っても、設定や会話には届かないか
 - ステージ画面へ送る指示・受け取る報告の中身が、決めた形に絞られているか
@@ -62,7 +62,7 @@ r = run(HOST, PEER, [{"path": "/stage"}, {"path": "/stage?key=wrongwrong"}, {"pa
                      {"method": "POST", "path": "/stage/report", "json": {"event": "start", "id": 3}, "headers": SAME},
                      {"method": "POST", "path": "/stage/report", "json": {"event": "start", "id": 3}, "headers": {"Origin": "http://evil.example"}}], **LAN)
 check("合言葉なし・違う合言葉のステージ画面は403", [x["status"] for x in r[:2]] == [403, 403], r[:2])
-check("正しい合言葉なら200で、Cookieを発行", r[2]["status"] == 200 and r[2]["cookie"] and "ミナト｜ステージ" in r[2]["body"], r[2])
+check("正しい合言葉なら200で、Cookieを発行", r[2]["status"] == 200 and r[2]["cookie"] and "view view｜ステージ" in r[2]["body"], r[2])
 check("Cookieで、ステージ画面の部品と声の取得に届く", [x["status"] for x in r[3:6]] == [200, 200, 200], r[3:6])
 check("同じ画面からの報告は200", r[6]["status"] == 200, r[6])
 check("別サイトからの報告は403", r[7]["status"] == 403, r[7])
@@ -136,7 +136,7 @@ check("あとから開いた面談画面にも「開始する」が押されて�
 tc.post("/stage/report", json={"event": "end", "id": 9})
 check("ステージ画面の報告が、面談画面へ届く", boss_sink.items[-1] == {"type": "report", "event": "end", "id": 9}, boss_sink.items)
 import tempfile  # noqa: E402
-sb.KEY_PATH = Path(tempfile.mkdtemp()) / "stage_key"   # 本物の合言葉（ミナト用PCのアドレス）を変えない
+sb.KEY_PATH = Path(tempfile.mkdtemp()) / "stage_key"   # 本物の合言葉（view view用PCのアドレス）を変えない
 tc.post("/stage/rotate")
 check("合言葉を作り直すと、開いていたステージ画面の接続を切る", stage_sink.items[-1] is None, stage_sink.items[-1:])
 sb._stage_subs.discard(stage_sink)

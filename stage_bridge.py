@@ -1,9 +1,9 @@
-"""ミナト用PC（別のパソコン）との中継。
+"""view view用PC（別のパソコン）との中継。
 
-ミナト用PCのChromeでステージ画面（/stage）を開き、会議に「ミナト」として参加させる。
+view view用PCのChromeでステージ画面（/stage）を開き、会議に「view view」として参加させる。
 聞き取りと判定は上司のPC（このサーバー）で行い、「話す」と決めた文だけをステージ画面へ送る。
 
-- /stage          … ステージ画面（ミナト用PC）。ほかのPCから開くときは合言葉が必要
+- /stage          … ステージ画面（view view用PC）。ほかのPCから開くときは合言葉が必要
 - /stage/events   … ステージ画面への指示（Server-Sent Events）
 - /stage/report   … ステージ画面からの報告（話し始めた・話し終えた 等）
 - /stage/command  … 面談画面からの指示（このPCからのみ）
@@ -33,10 +33,10 @@ COOKIE = "minato_stage"
 KEY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"   # 読み間違えやすい文字（0/o・1/l/i）を除く
 KEY_LEN = 10
 
-_stage_subs: set = set()   # ステージ画面（ミナト用PC）
+_stage_subs: set = set()   # ステージ画面（view view用PC）
 _boss_subs: set = set()    # 面談画面（上司のPC）
 _key: str | None = None
-_stage_unlocked = False    # ミナト用PCで「開始する」が押されているか（あとから開いた面談画面にも伝える）
+_stage_unlocked = False    # view view用PCで「開始する」が押されているか（あとから開いた面談画面にも伝える）
 
 
 # ---------- 合言葉 ----------
@@ -85,7 +85,7 @@ def cookie_ok(header: str | None) -> bool:
 
 
 def lan_addresses() -> list[str]:
-    """このPCの同じネットワーク内でのアドレス（ミナト用PCに開いてもらう先）"""
+    """このPCの同じネットワーク内でのアドレス（view view用PCに開いてもらう先）"""
     ips: list[str] = []
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -211,7 +211,7 @@ def clean_report(body: dict) -> dict | None:
     return out
 
 
-# ---------- ステージ画面（ミナト用PC） ----------
+# ---------- ステージ画面（view view用PC） ----------
 @router.get("/stage")
 async def stage_page(request: Request):
     resp = FileResponse(BASE_DIR / "static" / "stage.html")

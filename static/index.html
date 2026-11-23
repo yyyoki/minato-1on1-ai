@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ミナト｜1on1見守りAI</title>
-  <link rel="stylesheet" href="/static/style.css?v=18">
+  <title>view view｜1on1見守りAI</title>
+  <link rel="stylesheet" href="/static/style.css?v=19">
 </head>
 <body>
 <div id="app" data-screen="start">
@@ -12,7 +12,7 @@
   <header class="topbar">
     <button class="brand" id="brandHome" type="button" aria-label="スタート画面に戻る">
       <span class="brand-mark" aria-hidden="true"></span>
-      <span class="brand-name">ミナト</span>
+      <span class="brand-name">view view</span>
       <span class="brand-sub">1on1見守りAI</span>
     </button>
     <ol class="stepper" id="stepper" aria-label="進行状況">
@@ -34,12 +34,12 @@
         <div class="hero-visual">
           <div class="hero-glow" aria-hidden="true"></div>
           <div class="char char-xl" id="charStart"></div>
-          <div class="bubble bubble-hero">はじめまして、ミナトです！<br>1on1にそっと同席しますね。</div>
+          <div class="bubble bubble-hero">はじめまして、view viewです！<br>1on1にそっと同席しますね。</div>
         </div>
         <div class="hero-copy">
           <p class="eyebrow">1on1 性格連動型 見守りAI</p>
           <h1>部下の<span class="marker">受け止め方</span>に寄り添う、<br>1on1の見守り役。</h1>
-          <p class="lead">同じひとことでも、性格によって響き方は変わります。ミナトは上司と部下の声を聞き分けながら会話を見守り、部下が萎縮しそうな瞬間だけ、やさしく言い換えを提案します。</p>
+          <p class="lead">同じひとことでも、性格によって響き方は変わります。view viewは上司と部下の声を聞き分けながら会話を見守り、部下が萎縮しそうな瞬間だけ、やさしく言い換えを提案します。</p>
           <div class="cta-row">
             <button class="btn btn-primary btn-lg" id="btnBegin" type="button">部下さんの傾向診断（本人が答えます）</button>
             <button class="btn btn-ghost btn-lg" id="btnQuick" type="button" hidden>前回の分析で面談する</button>
@@ -52,7 +52,7 @@
       <ol class="flow">
         <li>
           <span class="flow-num">1</span>
-          <div><b>傾向診断（最初に1回）</b><small>部下さん本人が24の質問に答えます。ミナトが受け止め方の傾向を覚えます</small></div>
+          <div><b>傾向診断（最初に1回）</b><small>部下さん本人が24の質問に答えます。view viewが受け止め方の傾向を覚えます</small></div>
         </li>
         <li>
           <span class="flow-num">2</span>
@@ -60,7 +60,7 @@
         </li>
         <li>
           <span class="flow-num">3</span>
-          <div><b>ミナトが同席</b><small>誰が話したかを表示し、必要なときだけ言い換えを提案します</small></div>
+          <div><b>view viewが同席</b><small>誰が話したかを表示し、必要なときだけ言い換えを提案します</small></div>
         </li>
         <li>
           <span class="flow-num">4</span>
@@ -119,7 +119,7 @@
 
           <div class="two-col">
             <div class="card">
-              <h3 class="card-title"><span class="dot dot-warn"></span>ミナトが特に気をつける言い方</h3>
+              <h3 class="card-title"><span class="dot dot-warn"></span>view viewが特に気をつける言い方</h3>
               <ul class="watch-list" id="pfWatch"></ul>
             </div>
             <div class="card">
@@ -170,8 +170,8 @@
 
         <div class="card voice-row">
           <div class="form-row">
-            <span class="form-label">ミナトの話し方</span>
-            <div class="pill-choice" id="voiceOn" role="radiogroup" aria-label="ミナトの話し方">
+            <span class="form-label">view viewの話し方</span>
+            <div class="pill-choice" id="voiceOn" role="radiogroup" aria-label="view viewの話し方">
               <button type="button" data-voice="on" role="radio">声で話す</button>
               <button type="button" data-voice="off" role="radio">画面だけ</button>
             </div>
@@ -191,17 +191,17 @@
           <div class="intent-grid">
             <label class="field"><span>今日伝えたいこと（1行に1つ・3つまで）<em>上司の画面だけ</em></span>
               <textarea id="intentGoals" rows="3" maxlength="200" placeholder="例：期限の前に相談してほしい&#10;例：集計の範囲を先に決める進め方"></textarea></label>
-            <label class="field"><span>部下に持ち帰ってほしいこと<em class="em-share">ミナトの画面に出ることがあります</em></span>
+            <label class="field"><span>部下に持ち帰ってほしいこと<em class="em-share">view viewの画面に出ることがあります</em></span>
               <input id="intentTakeaway" type="text" maxlength="40" placeholder="例：困ったら早めに声をかけていい"></label>
             <label class="field"><span>面談の後、どうなっていてほしいか<em>上司の画面だけ</em></span>
               <input id="intentOutcome" type="text" maxlength="60" placeholder="例：水曜までに下書きを一緒に見る約束ができている"></label>
           </div>
-          <p class="field-help">書かなくても始められます。書いておくと、ミナトが上司の意図を汲み取って橋渡しし、面談中に「伝えたいこと」が話題に出たか（目安）を表示します。本文はこのPCのメモリにだけ置き、ログには残しません。</p>
+          <p class="field-help">書かなくても始められます。書いておくと、view viewが上司の意図を汲み取って橋渡しし、面談中に「伝えたいこと」が話題に出たか（目安）を表示します。本文はこのPCのメモリにだけ置き、ログには残しません。</p>
           </div>
         </details>
 
         <details class="card enroll-details" id="moreDetails">
-          <summary>オンライン会議・ミナト用PC（2台目）で使う場合</summary>
+          <summary>オンライン会議・view view用PC（2台目）で使う場合</summary>
           <div class="enroll-inner">
         <div class="card form-card" id="formCard">
           <h3 class="card-title">面談のかたち</h3>
@@ -231,30 +231,30 @@
               <li>「<b>タブの音声も共有する</b>」をオンにして「共有」</li>
               <li>このPCのマイクの声＝上で選んだ人、会議から聞こえる声＝相手、として見分けます</li>
             </ol>
-            <p class="field-help">Zoomなどのアプリで参加している場合は「画面全体」を選び「システム音声を共有」をオンにします（PCによっては選べません。その場合は会議をブラウザで開いてください）。相手にもミナトの声を届けたいときは、会議アプリの画面共有でこのタブを「音声も共有」で共有します。</p>
+            <p class="field-help">Zoomなどのアプリで参加している場合は「画面全体」を選び「システム音声を共有」をオンにします（PCによっては選べません。その場合は会議をブラウザで開いてください）。相手にもview viewの声を届けたいときは、会議アプリの画面共有でこのタブを「音声も共有」で共有します。</p>
           </div>
         </div>
 
         <div class="card form-card" id="stageCard">
-          <h3 class="card-title">ミナトの声と姿</h3>
-          <div class="segmented two" id="voiceOut" role="radiogroup" aria-label="ミナトの声と姿">
+          <h3 class="card-title">view viewの声と姿</h3>
+          <div class="segmented two" id="voiceOut" role="radiogroup" aria-label="view viewの声と姿">
             <button type="button" data-out="local" role="radio"><b>このPCから話す</b><small>対面のとき。このPCのスピーカーから話します</small></button>
-            <button type="button" data-out="stage" role="radio"><b>ミナト用PCで会議に参加</b><small>別のパソコンが「ミナト」として会議に入り、声と姿を届けます</small></button>
+            <button type="button" data-out="stage" role="radio"><b>view view用PCで会議に参加</b><small>別のパソコンが「view view」として会議に入り、声と姿を届けます</small></button>
           </div>
           <div class="form-body" id="stageSetup" hidden>
             <p class="notice" id="stageLanNote" hidden>このPCのサーバーが、ほかのパソコンから接続できない設定で起動しています。いったん止めて、<code>tools/start_lan.sh</code> で起動し直してください（中身：<code>STAGE_LAN=1 uvicorn main:app --host 0.0.0.0 --port 8001</code>）。</p>
-            <p class="body-text">ミナト用PCのChromeで、次のアドレスを開いてください（このPCと同じWi-Fiにつないでおきます）。</p>
+            <p class="body-text">view view用PCのChromeで、次のアドレスを開いてください（このPCと同じWi-Fiにつないでおきます）。</p>
             <div class="stage-url-row">
               <code class="stage-url" id="stageUrl">確認しています…</code>
               <button class="btn btn-ghost" id="btnStageCopy" type="button">コピー</button>
             </div>
             <p class="field-help" id="stageUrlMore" hidden></p>
             <div class="form-row">
-              <span class="share-status" id="stageStatus" data-ok="false" aria-live="polite">ミナト用PCはまだつながっていません</span>
-              <button class="btn btn-ghost" id="btnStageTest" type="button" disabled>ミナト用PCでテスト再生</button>
+              <span class="share-status" id="stageStatus" data-ok="false" aria-live="polite">view view用PCはまだつながっていません</span>
+              <button class="btn btn-ghost" id="btnStageTest" type="button" disabled>view view用PCでテスト再生</button>
             </div>
-            <label class="check-row"><input type="checkbox" id="stageTip" checked> ミナトの画面に、上司への言い換えの提案も出す（部下にも見えます）</label>
-            <p class="field-help">会議への声と姿の流し方（BlackHole・画面共有・仮想カメラ）は「ミナト用PC_設定手順.md」を見てください。ミナト用PCがつながっていない時や、「開始する」が押されていない時は、このPCから話します。<button class="btn-text" id="btnStageRotate" type="button">合言葉を作り直す</button></p>
+            <label class="check-row"><input type="checkbox" id="stageTip" checked> view viewの画面に、上司への言い換えの提案も出す（部下にも見えます）</label>
+            <p class="field-help">会議への声と姿の流し方（BlackHole・画面共有・仮想カメラ）は「view view用PC_設定手順.md」を見てください。view view用PCがつながっていない時や、「開始する」が押されていない時は、このPCから話します。<button class="btn-text" id="btnStageRotate" type="button">合言葉を作り直す</button></p>
           </div>
         </div>
 
@@ -313,7 +313,7 @@
         </details>
 
         <div class="cta-row center">
-          <button class="btn btn-primary btn-lg" id="btnStartMeeting" type="button">ミナトを同席させて面談を開始</button>
+          <button class="btn btn-primary btn-lg" id="btnStartMeeting" type="button">view viewを同席させて面談を開始</button>
           <button class="btn btn-ghost btn-lg" id="btnPractice" type="button">面談の前に：受け取り方の練習（5問）</button>
         </div>
         <p class="hint" id="voicesHint">自動の判定を間違えたときは、会話ログの名前の札をクリックすると直せます。</p>
@@ -354,7 +354,7 @@
                 <option value="goal">目標の設定</option>
                 <option value="casual">雑談・相談</option>
               </select></label>
-            <button class="chip chip-voice" id="mtVoice" type="button" data-on="true" title="ミナトの声のオン／オフ（キー V）">声：オン</button>
+            <button class="chip chip-voice" id="mtVoice" type="button" data-on="true" title="view viewの声のオン／オフ（キー V）">声：オン</button>
           </div>
 
           <div class="scene" id="scene">
@@ -366,7 +366,7 @@
 
             <div class="seat seat-mofu" data-role="mofu">
               <div class="char char-stage" id="charMeeting"></div>
-              <div class="nameplate"><i class="np-dot"></i><span id="npMofu">ミナト</span><small>見守りAI</small></div>
+              <div class="nameplate"><i class="np-dot"></i><span id="npMofu">view view</span><small>見守りAI</small></div>
             </div>
 
             <div class="seat" id="seatSub" data-role="subordinate">
@@ -390,7 +390,7 @@
             <div class="speech-objective" id="speechObjective" hidden>
               <p><small>起きたこと（事実）</small><span id="objFact"></span></p>
               <p><small>いま浮かんでいる評価の言葉</small><span id="objJudge"></span></p>
-              <p class="obj-q"><small>ミナトからの問い</small><span id="objQuestion"></span></p>
+              <p class="obj-q"><small>view viewからの問い</small><span id="objQuestion"></span></p>
             </div>
             <p class="speech-reply" id="speechReply" hidden><small id="speechReplyLabel">言えるひとこと</small><span id="speechReplyText"></span></p>
             <div class="speech-feedback" id="speechFeedback" hidden>
@@ -453,7 +453,7 @@
           <div class="stat card"><span class="stat-label">面談時間</span><span class="stat-value" id="smDuration">0:00</span></div>
           <div class="stat card stat-boss"><span class="stat-label">上司の発言</span><span class="stat-value" id="smBoss">0</span></div>
           <div class="stat card stat-sub"><span class="stat-label">部下の発言</span><span class="stat-value" id="smSub">0</span></div>
-          <div class="stat card"><span class="stat-label">ミナトのひとこと</span><span class="stat-value" id="smInterv">0</span></div>
+          <div class="stat card"><span class="stat-label">view viewのひとこと</span><span class="stat-value" id="smInterv">0</span></div>
         </div>
 
         <div class="card receive-summary">
@@ -507,7 +507,7 @@
         <div class="card practice">
           <p class="eyebrow">受け取り方の練習 <span id="prProgress"></span></p>
           <h2 class="card-title">厳しい一言に、自分を責めずに返す練習です</h2>
-          <p class="body-text">Google のエンジニア向けの手引きには、指摘する側だけでなく<b>受け取る側</b>の心構えも書かれています（指摘は人ではなく仕事に向けたもの、として受け取る など）。ミナトはそれを4つの型にまとめました。</p>
+          <p class="body-text">Google のエンジニア向けの手引きには、指摘する側だけでなく<b>受け取る側</b>の心構えも書かれています（指摘は人ではなく仕事に向けたもの、として受け取る など）。view viewはそれを4つの型にまとめました。</p>
           <ul class="skill-list">
             <li><b>分ける</b>人ではなく、行動・仕事の話として受け取る</li>
             <li><b>取り出す</b>言い方が強くても、直してほしい中身を拾う</li>
@@ -522,7 +522,7 @@
             <label class="field"><span>あなたなら、どう返しますか？（入力した文は保存しません）</span>
               <textarea id="prReply" rows="2" maxlength="200" placeholder="例：すみません、私がダメで…（思ったままでも大丈夫です）"></textarea></label>
             <div class="cta-row">
-              <button class="btn btn-primary" id="prCheck" type="submit">ミナトに見てもらう</button>
+              <button class="btn btn-primary" id="prCheck" type="submit">view viewに見てもらう</button>
               <button class="btn btn-ghost" id="prNext" type="button" hidden>次の問題へ</button>
               <button class="btn-text" id="prQuit" type="button">練習をやめる</button>
             </div>
@@ -603,8 +603,8 @@
       <div class="engine-status" id="engineStatus" data-ok="false">音声エンジンを確認しています…</div>
       <p class="field-help">無料の音声ソフト VOICEVOX を起動しておくと、やわらかく自然な声で話します。起動していない間は、このPCに入っている声を使います。</p>
       <div class="voice-row">
-        <label class="field"><span>ミナトの声</span><select id="voiceMofu"></select></label>
-        <button class="icon-btn" type="button" data-preview="mofu" aria-label="ミナトの声を試聴">▶</button>
+        <label class="field"><span>view viewの声</span><select id="voiceMofu"></select></label>
+        <button class="icon-btn" type="button" data-preview="mofu" aria-label="view viewの声を試聴">▶</button>
       </div>
       <div class="voice-row">
         <label class="field"><span>上司の声（デモ再生用）</span><select id="voiceBoss"></select></label>
@@ -618,7 +618,7 @@
       <p class="field-help">VOICEVOXは http://127.0.0.1:50021、AivisSpeechは http://127.0.0.1:10101 です。このPC上のエンジンだけを使います。</p>
 
       <h3 class="drawer-section">話すタイミングと判定</h3>
-      <label class="field"><span>ミナトが声で話す頻度</span>
+      <label class="field"><span>view viewが声で話す頻度</span>
         <select id="setPace">
           <option value="normal">ふつう（90秒以上あけて、30分で5回まで）</option>
           <option value="gentle">控えめ（5分以上あけて、30分で3回まで）</option>
@@ -640,7 +640,7 @@
       <p class="field-help">オンにすると、このPCのマイクではなく、Zoomから届く話者名つきの文字起こしを使います（Zoomのアプリ登録が必要。手順は「Zoom連携_設計.md」）。</p>
       <label class="field"><span>上司のZoom表示名</span><input id="zoomBoss" type="text" placeholder="例：山田 太郎"></label>
       <label class="field"><span>部下のZoom表示名</span><input id="zoomSub" type="text" placeholder="例：佐藤 花子"></label>
-      <label class="field"><span>無視する表示名（ミナトを流すPCなど。カンマ区切り）</span><input id="zoomIgnore" type="text" placeholder="例：ミナト"></label>
+      <label class="field"><span>無視する表示名（view viewを流すPCなど。カンマ区切り）</span><input id="zoomIgnore" type="text" placeholder="例：view view"></label>
       <div class="engine-status" id="zoomStatus" data-ok="false">Zoom連携の状態を確認しています…</div>
 
       <h3 class="drawer-section">名前マスキング</h3>
@@ -664,7 +664,7 @@
 <script src="/static/metrics.js?v=12"></script>
 <script src="/static/audio.js?v=15"></script>
 <script src="/static/stage_link.js?v=3"></script>
-<script src="/static/app.js?v=24"></script>
+<script src="/static/app.js?v=25"></script>
 <script src="/static/measure.js?v=12"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 "use strict";
 
-// ミナト用PCのステージ画面。上司のPCからの指示で、声を出し・吹き出しと表情を変える。
+// view view用PCのステージ画面。上司のPCからの指示で、声を出し・吹き出しと表情を変える。
 // 届くのは「話す文・吹き出し・表情」だけ。会話の記録や部下の特性はここには来ない。
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -68,7 +68,7 @@
 
   async function test() {
     if (!unlocked) return;
-    const parts = ["ミナトです。", "聞こえていますか？"];
+    const parts = ["ビュービューです。", "聞こえていますか？"];
     showBubble({ text: parts.join("") });
     mofu.setState("speaking");
     await Voice.speakParts(parts, "mofu");

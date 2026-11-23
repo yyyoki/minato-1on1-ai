@@ -1,6 +1,6 @@
 "use strict";
 
-// 上司のPC → ミナト用PC（ステージ画面）への指示と、その報告の受け取り。
+// 上司のPC → view view用PC（ステージ画面）への指示と、その報告の受け取り。
 // speakParts は Voice.speakParts と同じ形（done / cancelled / failed を返し、音が出始めたら onStart）。
 const StageLink = (() => {
   const START_TIMEOUT_MS = 5000;   // 合成と再生がこれより遅れたら諦めて、上司のPCから話す判断に回す
@@ -93,7 +93,7 @@ const StageLink = (() => {
 
   return {
     open,
-    // 話を任せてよい状態か（つながっていて、ミナト用PCで「開始」が押されている）
+    // 話を任せてよい状態か（つながっていて、view view用PCで「開始」が押されている）
     ready: () => connected > 0 && unlocked,
     connected: () => connected,
     unlocked: () => unlocked,

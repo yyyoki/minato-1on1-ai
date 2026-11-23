@@ -1,6 +1,6 @@
 "use strict";
 
-// ---------- フロア管理：ミナトが「今、割って入ってよいか」を決める ----------
+// ---------- フロア管理：view viewが「今、割って入ってよいか」を決める ----------
 // 画面にも音声にも触らない純粋なロジック。時刻はすべて引数で受け取るので、
 // tools/test_turn.js から会話シナリオをそのまま再生して確認できる。
 // 数値はすべて仮置き（実面談では未検証）。迷ったら話さず、画面ヒントに回す。
@@ -15,7 +15,7 @@
     speculateSilenceMs: 250,
     speculateMinChars: 6,
     playStartTimeoutMs: 1500, // 合成・再生がこれより遅れたら、声を諦める
-    remoteStartScale: 3,      // ミナト用PC（Wi-Fi越し）で話すときは、話し出しの待ちを長くする
+    remoteStartScale: 3,      // view view用PC（Wi-Fi越し）で話すときは、話し出しの待ちを長くする
     maxPlayMs: 20000,
     echoLearnMs: 400,
     echoMargin: 2.5,
@@ -65,7 +65,7 @@
     return Math.min(...row);
   }
 
-  // 認識結果が、ミナト自身の声を拾ったものかどうか。
+  // 認識結果が、view view自身の声を拾ったものかどうか。
   // 順序まで見て比べ、セリフと違う部分が一定以上あれば人の発言として扱う
   function isEchoText(text, spoken, similarity = 0.85) {
     const a = normalize(text), b = normalize(spoken);
@@ -82,7 +82,7 @@
     let pace = PACES[options.pace] || PACES.normal;
     let textOnly = !!options.textOnly;
     let voiceOff = false;
-    let remoteVoice = false;     // ミナト用PCで話す（出力音量が測れず、話し出しが遅れる）
+    let remoteVoice = false;     // view view用PCで話す（出力音量が測れず、話し出しが遅れる）
     let startedAt = options.t0 || 0;
 
     let state = "LISTEN";
@@ -95,7 +95,7 @@
     let speakSeq = 0;
     let voices = [];             // { t, category }
     let lastSpoken = null;       // { text, until }
-    let voiceSinceSpoke = 0;     // ミナトが話し終えてから聞こえた人の声
+    let voiceSinceSpoke = 0;     // view viewが話し終えてから聞こえた人の声
     let lastActivityAt = null;   // Zoomで最後に誰かの発話が届いた時刻（サーバー時計）
     let pendingBarge = null;     // 音量だけで止まった直後の確認用
     let bargeGain = 1;

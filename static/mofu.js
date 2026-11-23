@@ -1,11 +1,11 @@
-// もふもふキャラクター「ミナト」: SVG描画・まばたき・視線・状態アニメーション
+// もふもふキャラクター「view view」: SVG描画・まばたき・視線・状態アニメーション
 const Mofu = (() => {
   let uid = 0;
   const instances = new Set();
 
   function template(id) {
     return `
-<svg class="mofu" viewBox="0 0 240 240" role="img" aria-label="ミナト" data-state="idle">
+<svg class="mofu" viewBox="0 0 240 240" role="img" aria-label="view view" data-state="idle">
   <defs>
     <radialGradient id="${id}-fur" cx="42%" cy="34%" r="72%">
       <stop offset="0" stop-color="#FFFDF9"/>

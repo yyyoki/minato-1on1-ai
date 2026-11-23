@@ -201,7 +201,7 @@ check("自分を責める言葉に、視点と4つ目のタイプの予報が付
 # ---- 発注書 v12：部下の受け取り方の支援 ----
 print("\n受け取り方の支援（v12）")
 lines_v12 = [s for v in main.MINATO_LINES.values() for s in v.values()]
-check("ミナトの声は上司の意図の代弁をしない（「〜だと思います」を使わない）", not any("だと思います" in s or "んだと思" in s for s in lines_v12))
+check("view viewの声は上司の意図の代弁をしない（「〜だと思います」を使わない）", not any("だと思います" in s or "んだと思" in s for s in lines_v12))
 check("部下に責任を移す言葉を使わない", not any(w in s for s in lines_v12 for w in ["受け取り方が悪", "前向きに", "気にしすぎ", "考えすぎ"]))
 check("人格・能力の否定には、受け取るよう促さず「価値」か「行動」に分ける",
       all(("価値" in s or "行動" in s) for s in main.MINATO_LINES["personal_attack"].values()))

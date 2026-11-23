@@ -105,7 +105,7 @@
         return rec.id;
       },
       bind(uttId, mid) { if (mid) byUtt.set(uttId, mid); },
-      // ミナト自身の声を認識したものなど、発言として扱わなかった確定は計測から外す
+      // view view自身の声を認識したものなど、発言として扱わなかった確定は計測から外す
       discard(mid) {
         const i = records.findIndex((r) => r.id === mid);
         if (i >= 0) records.splice(i, 1);

@@ -38,7 +38,7 @@ const HOLD_REASON = {
 const OUTCOME_LABEL = { voice: "声で伝えた", interrupted: "途中で譲った", yielded: "会話を優先", screen: "画面のみ", pending: "判定のみ" };
 const CUSHIONS = ["あの、", "えっと、"];
 
-// デモ会話（上司・部下・ミナトの声を聞き分けられるように、それぞれ別の声で再生する）
+// デモ会話（上司・部下・view viewの声を聞き分けられるように、それぞれ別の声で再生する）
 const DEMO_SCRIPT = [
   { who: "boss", text: "先週お願いした資料、進捗どうなってる？" },
   { who: "subordinate", text: "すみません…私の段取りが悪くて、まだ半分くらいです" },
@@ -97,8 +97,8 @@ const state = {
   localRole: "boss",       // オンライン会議で、このPCのマイクで話す人
   diar: null,              // 声の登録なしの話者判定（static/diarize.js）
   remoteNoText: 0,         // 会議の音が鳴っているのに文字にならない時間（古いChromeの検出用）
-  voiceOut: "local",       // local（このPCから話す）/ stage（ミナト用PCで会議に参加して話す）
-  voiceOn: true,           // ミナトが声で話すか（オフなら画面だけ）
+  voiceOut: "local",       // local（このPCから話す）/ stage（view view用PCで会議に参加して話す）
+  voiceOn: true,           // view viewが声で話すか（オフなら画面だけ）
   situation: "progress",   // 面談の状況
   respondent: "self",      // 診断は部下本人が答える
   intent: { goals: [], takeaway: "", outcome: "" },  // 上司が事前に伝えたいこと（この面談の間だけ）
@@ -107,7 +107,7 @@ const state = {
   receiveTipAt: {},        // 受け取り方のヒントを最後に出した時刻（種類ごと）
   receive: null,           // 受け取り方メーター（この面談で部下ができた型の回数）
   practice: null,          // 受け取り方の練習
-  stageTip: true,          // ミナト用PCの画面に、上司への言い換えの提案も出す
+  stageTip: true,          // view view用PCの画面に、上司への言い換えの提案も出す
   stageInfo: null,
   remoteWarned: false,
 };
@@ -180,7 +180,7 @@ function formatDuration(ms) {
 }
 
 function charName() {
-  return (state.config && state.config.character_persona && state.config.character_persona.name) || "ミナト";
+  return (state.config && state.config.character_persona && state.config.character_persona.name) || "view view";
 }
 
 function roleName(role) {
@@ -505,7 +505,7 @@ function setVoiceOn(on) {
   if (!state.isRecording) return;
   feedTurn({ type: "mode", voiceOff: !on });
   if (!on && state.turn && !state.turn.idle) feedTurn({ type: "cancel", why: "voice_off" });
-  addSystemLine(on ? "ミナトが声で話します" : "ミナトは声を出さず、画面でお伝えします");
+  addSystemLine(on ? "view viewが声で話します" : "view viewは声を出さず、画面でお伝えします");
 }
 
 function renderForm() {
@@ -691,7 +691,7 @@ function stopTry() {
   delete $("tryResult").dataset.speaker;
 }
 
-// ---------- ミナト用PC（別のパソコン）で、ミナトとして会議に参加する ----------
+// ---------- view view用PC（別のパソコン）で、view viewとして会議に参加する ----------
 const useStage = () => state.voiceOut === "stage";
 const stageReady = () => useStage() && StageLink.ready();
 
@@ -700,11 +700,13 @@ function mofuChoice() {
   return r.kind === "vv" ? `vv:${r.id}` : r.voice ? `br:${r.voice.name}` : "";
 }
 
-// ミナトの声：ミナト用PCが準備できていればそちらで、そうでなければこのPCで話す
+// view viewの声：view view用PCが準備できていればそちらで、そうでなければこのPCで話す
+const spokenName = (t) => (typeof t === "string" ? t.replace(/view view/gi, "ビュービュー") : t);
 function speakMofu(parts, onStart, bubble) {
+  parts = parts.map(spokenName);
   if (stageReady()) {
     return StageLink.speakParts(parts, { choice: mofuChoice(), bubble }, (kind) => {
-      Mic.suppressRemote(true); // ミナトの声が会議の音として戻ってきても、相手の声として数えない
+      Mic.suppressRemote(true); // view viewの声が会議の音として戻ってきても、相手の声として数えない
       onStart(kind);
     });
   }
@@ -747,9 +749,9 @@ async function renderStageCard(refresh) {
   const n = StageLink.connected();
   const status = $("stageStatus");
   status.dataset.ok = String(StageLink.ready());
-  status.textContent = !n ? "ミナト用PCはまだつながっていません"
-    : !StageLink.unlocked() ? "つながりました。ミナト用PCの画面で「開始する」を押してください"
-      : n > 1 ? `準備OK（${n}台つながっています）` : "準備OK：ミナト用PCから話します";
+  status.textContent = !n ? "view view用PCはまだつながっていません"
+    : !StageLink.unlocked() ? "つながりました。view view用PCの画面で「開始する」を押してください"
+      : n > 1 ? `準備OK（${n}台つながっています）` : "準備OK：view view用PCから話します";
   $("btnStageTest").disabled = !StageLink.ready();
 }
 
@@ -760,11 +762,11 @@ function setVoiceOut(out) {
 
 StageLink.onChange((ev) => {
   if (!$("stageCard").closest(".screen").hidden) renderStageCard();
-  if (ev.type === "test") toast("ミナト用PCでテスト再生しました");
+  if (ev.type === "test") toast("view view用PCでテスト再生しました");
   if (!state.isRecording || !useStage()) return;
-  if (ev.type === "connection" && ev.connected && !ev.before) addSystemLine("ミナト用PCがつながりました");
-  if (ev.type === "connection" && !ev.connected && ev.before) addSystemLine("ミナト用PCとの接続が切れました。このPCから話します");
-  if (ev.type === "ready" && ev.unlocked) addSystemLine("ミナト用PCの準備ができました。ここからはミナト用PCが話します");
+  if (ev.type === "connection" && ev.connected && !ev.before) addSystemLine("view view用PCがつながりました");
+  if (ev.type === "connection" && !ev.connected && ev.before) addSystemLine("view view用PCとの接続が切れました。このPCから話します");
+  if (ev.type === "ready" && ev.unlocked) addSystemLine("view view用PCの準備ができました。ここからはview view用PCが話します");
 });
 
 // ---------- ⑤ 面談 ----------
@@ -878,7 +880,7 @@ async function startMeeting() {
   chars.meeting.react("raise", 1000);
   addSystemLine("面談を開始しました");
   const method = speakerMethod();
-  addSystemLine(`面談の状況：${SITUATION_LABEL[state.situation]}${state.voiceOn ? "" : "（ミナトは声を出さず、画面でお伝えします）"}`);
+  addSystemLine(`面談の状況：${SITUATION_LABEL[state.situation]}${state.voiceOn ? "" : "（view viewは声を出さず、画面でお伝えします）"}`);
   if (state.intent.goals.length) addSystemLine(`今日伝えたいこと（${state.intent.goals.length}件）を、上司の画面に出しています`);
   if (method === "zoom") addSystemLine("Zoomの参加者名で、上司・部下を見分けます");
   else if (method === "manual") addSystemLine("声が近いため、話者は上部のボタンで切り替えます");
@@ -887,9 +889,9 @@ async function startMeeting() {
   else addSystemLine("声の違いと話し方から、上司・部下を自動で見分けます（間違えたら名札をクリック）");
   if (method !== "zoom" && state.form === "online" && !Mic.hasRemote()) addSystemLine("会議の音が共有されていないため、このPCのマイクだけで聞きます");
   if (state.voiceOut === "stage") {
-    addSystemLine(stageReady() ? "ミナト用PCから、声と姿を会議に届けます"
-      : StageLink.connected() ? "ミナト用PCで「開始する」が押されていません。押されるまで、このPCから話します"
-        : "ミナト用PCがつながっていません。つながるまで、このPCから話します");
+    addSystemLine(stageReady() ? "view view用PCから、声と姿を会議に届けます"
+      : StageLink.connected() ? "view view用PCで「開始する」が押されていません。押されるまで、このPCから話します"
+        : "view view用PCがつながっていません。つながるまで、このPCから話します");
   }
   const greeting = `${charName()}です。今日はよろしくお願いします！`;
   addMofuLine(greeting);
@@ -986,7 +988,7 @@ function onMeetingFrame({ level, speech, rms, t, remoteSpeech, remoteLevel }) {
   if (anySpeech) state.lastVoiceAt = t;
   if (remoteSpeech) state.lastRemoteSpeechAt = t;
   if (state.meter) state.meter.frame(t, anySpeech);
-  // 会議の音にはミナトの声が入らないので、相手の声は「人の声」として確実に伝える（話している最中なら譲る）
+  // 会議の音にはview viewの声が入らないので、相手の声は「人の声」として確実に伝える（話している最中なら譲る）
   feedTurn({ type: "frame", t, speech: anySpeech, rms: remoteSpeech ? 1 : rms, ref: Voice.outputLevel() });
   watchRemoteText(t, remoteSpeech);
   if (state.isSpeaking || state.demo) return;
@@ -1103,7 +1105,7 @@ function applyTurnAction(a) {
   }
 }
 
-// ミナトが実際に口にする全文（自分の声の照合に使う）
+// view viewが実際に口にする全文（自分の声の照合に使う）
 const spokenText = (result) => `${result.cushion_phrase || ""}${result.reframed_speech || ""}`;
 const sendableContext = (lines) => lines.filter((c) => !state.noSend.has(c));
 
@@ -1135,7 +1137,7 @@ function showBossHint(title, result) {
   showHint("boss", title, parts.filter(Boolean).join(" "), showProfile() && result.reason ? "判定：" + result.reason : "");
 }
 
-// 部下が自分を責める言葉を言った時：声では割り込まず、ミナトの画面に「行動と次の一手での言い直し」を出す
+// 部下が自分を責める言葉を言った時：声では割り込まず、view viewの画面に「行動と次の一手での言い直し」を出す
 const RECEIVE_TIP_GAP_MS = 60000;
 function showReceiveTip(sig) {
   const text = sig.rewrite || sig.reframe;
@@ -1200,7 +1202,7 @@ function renderGoals() {
     list.appendChild(li);
   });
   $("goalsTake").hidden = !takeaway;
-  $("goalsTake").textContent = takeaway ? `部下に持ち帰ってほしいこと：${takeaway}（ミナトの吹き出しに添えます）` : "";
+  $("goalsTake").textContent = takeaway ? `部下に持ち帰ってほしいこと：${takeaway}（view viewの吹き出しに添えます）` : "";
 }
 
 // 声を出さなかった回：言うつもりだった一言と提案を画面に残す
@@ -1344,7 +1346,7 @@ function giveFeedback(kind) {
   }
 }
 
-// デモでは、ミナトの判断と発話が終わるのを待ってから次の行へ進む
+// デモでは、view viewの判断と発話が終わるのを待ってから次の行へ進む
 async function turnSettled(maxMs = 15000) {
   const t0 = performance.now();
   while (state.turn && !state.turn.idle && state.demo && !state.demo.abort && performance.now() - t0 < maxMs) await sleep(80);
@@ -1468,7 +1470,7 @@ async function handleUtterance(text, meta = {}) {
   if (!m || !state.isRecording) return;
   const uttId = ++lineSeq;
   const speakerForTurn = meta.speaker || "boss";
-  // ミナト自身の声を認識したものは、発言として扱わない
+  // view view自身の声を認識したものは、発言として扱わない
   if (feedTurn({ type: "final", uttId, text, who: speakerForTurn, at: meta.at }).some((a) => a.type === "dropEcho")) {
     if (state.meter && meta.mid) state.meter.discard(meta.mid);
     return;
@@ -1768,7 +1770,7 @@ function openZoomFeed() {
       return;
     }
     if (ev.type !== "utterance" || !state.isRecording || state.demo) return;
-    // ミナトが話している間に届いた発言も取りこぼさないよう、順番に処理する
+    // view viewが話している間に届いた発言も取りこぼさないよう、順番に処理する
     state.zoomQueue = state.zoomQueue.then(() => receiveZoomUtterance(ev)).catch((err) => console.error(err));
   };
 }
@@ -1809,7 +1811,7 @@ function initRecognition() {
         handleUtterance(text, meta);
       } else {
         if (state.meter) state.meter.interim(performance.now());
-        // ミナトの発話中も聞き続ける（人が話し始めたら譲るため）
+        // view viewの発話中も聞き続ける（人が話し始めたら譲るため）
         const echo = feedTurn({ type: "interim", text }).some((a) => a.type === "dropEcho");
         if (echo || state.isSpeaking) continue;
         const who = state.liveSpeaker || (state.speakerMode !== "auto" ? state.speakerMode : null);
@@ -1898,7 +1900,7 @@ async function speakAs(role, text) {
       Mic.mute(false);
       state.lastFinalT = performance.now();
       backToListening();
-      // ミナト用PCの声は会議を通って少し遅れて戻るので、聞き取りの再開も遅らせる
+      // view view用PCの声は会議を通って少し遅れて戻るので、聞き取りの再開も遅らせる
       if (state.isRecording) setTimeout(startRecognition, viaStage ? 1800 : 300);
     }
   }
@@ -1940,7 +1942,7 @@ async function checkPractice(e) {
   try {
     res = await postJSON("/practice/check", { item_id: it.id, reply: $("prReply").value });
   } catch (err) {
-    toast("ミナトに見てもらえませんでした");
+    toast("view viewに見てもらえませんでした");
     return;
   }
   $("prMessage").textContent = res.message;
@@ -2079,7 +2081,7 @@ function renderMetrics() {
     ["話し終わり → 確定文", s.final],
     ["話し始め → 最初の途中文", s.firstInterim],
     ["確定文 → 判定の完了", s.judge],
-    ["話し終わり → ミナトが話し出す", s.speak],
+    ["話し終わり → view viewが話し出す", s.speak],
   ];
   const table = el("table", "metric-table");
   const head = el("tr");
@@ -2096,7 +2098,7 @@ function renderMetrics() {
   box.appendChild(table);
   box.appendChild(el("p", "muted metric-note",
     `発話の途中で確定した発言：${s.cut}/${s.utterances}件。` +
-    "「話し終わり」は、声の検知で最後に声が出た時刻です。ミナトが話し出すまでの時間は、声を出した回だけが対象です。件数が少ないうちは傾向の確認にとどまります。"));
+    "「話し終わり」は、声の検知で最後に声が出た時刻です。view viewが話し出すまでの時間は、声を出した回だけが対象です。件数が少ないうちは傾向の確認にとどまります。"));
 }
 
 // ---------- 設定ドロワー ----------
@@ -2234,7 +2236,7 @@ function addMaskRow(real = "", alias = "") {
 
 async function saveSettings() {
   const persona = state.config.character_persona;
-  persona.name = $("setName").value.trim() || "ミナト";
+  persona.name = $("setName").value.trim() || "view view";
   persona.position = $("setPosition").value.trim();
   persona.tone = $("setTone").value.trim();
   const masks = {};
@@ -2333,7 +2335,7 @@ $("btnStageCopy").addEventListener("click", () => {
 $("btnStageRotate").addEventListener("click", async () => {
   await StageLink.rotate();
   await renderStageCard(true);
-  toast("合言葉を作り直しました。ミナト用PCでは新しいアドレスを開き直してください");
+  toast("合言葉を作り直しました。view view用PCでは新しいアドレスを開き直してください");
 });
 Mic.onRemoteEnded((why) => {
   if (why === "replaced" || why === "mic_stopped" || why === "form") return;

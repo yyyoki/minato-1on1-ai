@@ -11,7 +11,7 @@ const Mic = (() => {
   let ctx = null, stream = null, analyser = null, timer = null, buf = null, vad = null, localGain = null, localSrc = null;
   let remote = null;            // { stream, src, analyser, buf, vad, dest, lastSpeech, level }
   let muted = false, muteUntil = 0, level = 0;
-  let remoteSuppressed = false, suppressUntil = 0; // ミナト用PCの声が会議の音として戻ってくる間
+  let remoteSuppressed = false, suppressUntil = 0; // view view用PCの声が会議の音として戻ってくる間
   const frames = [];
   const remoteTimes = [];       // 相手が話していたフレームの時刻だけ
   const listeners = new Set();
@@ -43,12 +43,12 @@ const Mic = (() => {
     const now = performance.now();
     let remoteSpeech = false;
     if (remote) {
-      // ミナトの声は会議の音に入らないので、話している間も相手の声は数える
+      // view viewの声は会議の音に入らないので、話している間も相手の声は数える
       const r = rmsOf(remote.analyser, remote.buf);
       const heard = remote.vad(r);
       remote.level = remote.level * 0.55 + Math.min(1, r * 14) * 0.45;
-      if (heard) remote.lastSpeech = now;   // マイク側の回り込み対策には、ミナトの声も含めて使う
-      // ミナト用PCの声は相手の声として数えない
+      if (heard) remote.lastSpeech = now;   // マイク側の回り込み対策には、view viewの声も含めて使う
+      // view view用PCの声は相手の声として数えない
       remoteSpeech = heard && !(remoteSuppressed || now < suppressUntil);
       if (remoteSpeech) remoteTimes.push(now);
       // 相手が話している間は、音声認識に渡すマイクの音を下げる（回り込んだ相手の声が二重に入らないように）
@@ -57,7 +57,7 @@ const Mic = (() => {
     const rms = rmsOf(analyser, buf);
     const ignored = muted || now < muteUntil;
     const remoteRecent = remote && now - remote.lastSpeech < REMOTE_HOLD_MS;
-    const speech = !ignored && vad(rms) && !remoteRecent; // ミナトの声で雑音レベルの学習が狂わないようにする
+    const speech = !ignored && vad(rms) && !remoteRecent; // view viewの声で雑音レベルの学習が狂わないようにする
     level = level * 0.55 + Math.min(1, rms * 14) * 0.45;
     if (speech) {
       const f = VoicePrint.frameFeatures(buf, ctx.sampleRate);
@@ -141,12 +141,12 @@ const Mic = (() => {
       if (remote) return remote.dest.stream.getAudioTracks()[0] || null;
       return stream ? stream.getAudioTracks()[0] || null : null;
     },
-    // ミナト用PCが話している間と、その少し後（会議の遅れ）は、会議の音を相手の声として数えない
+    // view view用PCが話している間と、その少し後（会議の遅れ）は、会議の音を相手の声として数えない
     suppressRemote(on) {
       remoteSuppressed = on;
       if (!on) suppressUntil = performance.now() + 1500;
     },
-    // ミナトや合成音声が話している間は拾わない（スピーカーの音を人の声と取り違えないため）
+    // view viewや合成音声が話している間は拾わない（スピーカーの音を人の声と取り違えないため）
     mute(on) {
       muted = on;
       if (!on) muteUntil = performance.now() + 400;
@@ -162,7 +162,7 @@ const Mic = (() => {
   };
 })();
 
-// ---------- 声：ミナト・上司・部下でそれぞれ違う声で話す ----------
+// ---------- 声：view view・上司・部下でそれぞれ違う声で話す ----------
 // VOICEVOX（またはAivisSpeech）が起動していればその声、無ければブラウザの声を使う
 const Voice = (() => {
   const ROLES = {
