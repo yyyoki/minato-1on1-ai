@@ -37,9 +37,9 @@
           <div class="bubble bubble-hero">はじめまして、view viewです！<br>1on1にそっと同席しますね。</div>
         </div>
         <div class="hero-copy">
-          <p class="eyebrow">1on1 性格連動型 見守りAI</p>
-          <h1>部下の<span class="marker">受け止め方</span>に寄り添う、<br>1on1の見守り役。</h1>
-          <p class="lead">同じひとことでも、性格によって響き方は変わります。view viewは上司と部下の声を聞き分けながら会話を見守り、部下が萎縮しそうな瞬間だけ、やさしく言い換えを提案します。</p>
+          <p class="eyebrow">1on1 で自分を責めないための、部下本人の味方</p>
+          <h1>指摘を受けた<span class="marker">その場で</span>、<br>自分を責めずに受け取る。</h1>
+          <p class="lead">指摘を受けた瞬間、「出来事」を「自分の価値の否定」と受け取ってしまうことがあります。view viewは部下本人の側で、片耳のイヤホンから短く声をかけ、起きたことと自分への評価を分けて見る手助けをします。上司の言葉は変えません。</p>
           <div class="cta-row">
             <button class="btn btn-primary btn-lg" id="btnBegin" type="button">部下さんの傾向診断（本人が答えます）</button>
             <button class="btn btn-ghost btn-lg" id="btnQuick" type="button" hidden>前回の分析で面談する</button>
@@ -56,11 +56,11 @@
         </li>
         <li>
           <span class="flow-num">2</span>
-          <div><b>面談を始める</b><small>上司は開始を押すだけ。今日の状況や伝えたいことは、書いておくと汲み取ります（任意）</small></div>
+          <div><b>面談を始める</b><small>部下本人が、自分のPCで開始を押します。片耳にイヤホンをつけてください（任意で、今日の状況も書けます）</small></div>
         </li>
         <li>
           <span class="flow-num">3</span>
-          <div><b>view viewが同席</b><small>誰が話したかを表示し、必要なときだけ言い換えを提案します</small></div>
+          <div><b>view viewが同席</b><small>上司の言葉を受け取る場面や、自分を責めそうな瞬間に、短く声をかけます。画面にも出ます</small></div>
         </li>
         <li>
           <span class="flow-num">4</span>
@@ -175,7 +175,8 @@
               <button type="button" data-voice="on" role="radio">声で話す</button>
               <button type="button" data-voice="off" role="radio">画面だけ</button>
             </div>
-            <small class="muted">「声で話す」だと、部下が自分を責めたときも短く声で話しかけます（60秒に1回まで）。面談中も切り替えられます（キー V）</small>
+            <small class="muted">「声で話す」は、部下が自分を責めたとき、短く声で話しかけます（60秒に1回まで）。<b>片耳のイヤホンが前提</b>です。スピーカーからだと上司にも聞こえます。面談中も切り替えられます（キー V）</small>
+            <label class="check-row" id="earphoneRow"><input type="checkbox" id="earphoneOk"> イヤホンをつけました（確認するまで、声は出さず画面だけでお伝えします）</label>
           </div>
         </div>
 
@@ -238,7 +239,7 @@
         <div class="card form-card" id="stageCard">
           <h3 class="card-title">view viewの声と姿</h3>
           <div class="segmented two" id="voiceOut" role="radiogroup" aria-label="view viewの声と姿">
-            <button type="button" data-out="local" role="radio"><b>このPCから話す</b><small>対面のとき。このPCのスピーカーから話します</small></button>
+            <button type="button" data-out="local" role="radio"><b>このPCのイヤホンから話す</b><small>対面のとき。つないだイヤホンから話します</small></button>
             <button type="button" data-out="stage" role="radio"><b>view view用PCで会議に参加</b><small>別のパソコンが「view view」として会議に入り、声と姿を届けます</small></button>
           </div>
           <div class="form-body" id="stageSetup" hidden>
@@ -664,7 +665,7 @@
 <script src="/static/metrics.js?v=12"></script>
 <script src="/static/audio.js?v=15"></script>
 <script src="/static/stage_link.js?v=3"></script>
-<script src="/static/app.js?v=25"></script>
+<script src="/static/app.js?v=26"></script>
 <script src="/static/measure.js?v=12"></script>
 </body>
 </html>

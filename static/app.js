@@ -99,6 +99,7 @@ const state = {
   remoteNoText: 0,         // 会議の音が鳴っているのに文字にならない時間（古いChromeの検出用）
   voiceOut: "local",       // local（このPCから話す）/ stage（view view用PCで会議に参加して話す）
   voiceOn: true,           // view viewが声で話すか（オフなら画面だけ）
+  earphone: false,         // イヤホンをつけた（対面でスピーカーから声を出して上司に聞こえないよう、確認が取れた時だけ声を出す）
   situation: "progress",   // 面談の状況
   respondent: "self",      // 診断は部下本人が答える
   intent: { goals: [], takeaway: "", outcome: "" },  // 上司が事前に伝えたいこと（この面談の間だけ）
@@ -220,6 +221,7 @@ async function init() {
     state.voiceOut = audio.voice_out === "stage" ? "stage" : "local";
     state.stageTip = audio.stage_tip !== false;
     state.voiceOn = audio.voice_on !== false;
+    state.earphone = audio.earphone === true;
     state.situation = SITUATION_LABEL[audio.situation] ? audio.situation : "progress";
     Voice.setConfig(config.voice);
   } catch (e) {
@@ -420,7 +422,7 @@ async function saveProfileEdits() {
   preset.meta_triggers = $("pfEditMeta").value.trim();
   state.config.active_preset = key;
   state.config.sensitivity = state.sensitivity;
-  state.config.audio = Object.assign({}, state.config.audio, { form: state.form, local_role: state.localRole, voice_out: state.voiceOut, stage_tip: state.stageTip, voice_on: state.voiceOn, situation: state.situation });
+  state.config.audio = Object.assign({}, state.config.audio, { form: state.form, local_role: state.localRole, voice_out: state.voiceOut, stage_tip: state.stageTip, voice_on: state.voiceOn, earphone: state.earphone, situation: state.situation });
   await postJSON("/config", state.config);
 }
 
@@ -474,6 +476,8 @@ function renderPrep() {
     b.classList.toggle("is-active", on);
     b.setAttribute("aria-checked", String(on));
   });
+  $("earphoneOk").checked = state.earphone;
+  $("earphoneRow").hidden = !state.voiceOn || state.voiceOut === "stage";
 }
 
 function readIntent() {
@@ -492,10 +496,15 @@ function setSituation(sit) {
   }
 }
 
+// 実際に声を出してよいか。このPCのスピーカーから話す時は、イヤホンの確認が取れていないと出さない（上司に聞こえるため）
+function voiceActive() {
+  return state.voiceOn && (state.voiceOut === "stage" || state.earphone);
+}
+
 function renderVoiceChip() {
   const b = $("mtVoice");
   b.dataset.on = String(state.voiceOn);
-  b.textContent = state.voiceOn ? "声：オン" : "声：オフ（画面だけ）";
+  b.textContent = voiceActive() ? "声：オン（イヤホン）" : state.voiceOn ? "声：待機（イヤホン未確認）" : "声：オフ（画面だけ）";
 }
 
 function setVoiceOn(on) {
@@ -503,9 +512,9 @@ function setVoiceOn(on) {
   renderPrep();
   renderVoiceChip();
   if (!state.isRecording) return;
-  feedTurn({ type: "mode", voiceOff: !on });
-  if (!on && state.turn && !state.turn.idle) feedTurn({ type: "cancel", why: "voice_off" });
-  addSystemLine(on ? "view viewが声で話します" : "view viewは声を出さず、画面でお伝えします");
+  feedTurn({ type: "mode", voiceOff: !voiceActive() });
+  if (!voiceActive() && state.turn && !state.turn.idle) feedTurn({ type: "cancel", why: "voice_off" });
+  addSystemLine(voiceActive() ? "view viewがイヤホンで話します" : on ? "イヤホンをつけたことを確認するまで、声は出さず画面でお伝えします" : "view viewは声を出さず、画面でお伝えします");
 }
 
 function renderForm() {
@@ -758,6 +767,8 @@ async function renderStageCard(refresh) {
 function setVoiceOut(out) {
   state.voiceOut = out;
   renderStageCard();
+  renderPrep();
+  renderVoiceChip();
 }
 
 StageLink.onChange((ev) => {
@@ -800,7 +811,7 @@ async function startMeeting() {
   state.inputSource = zoomEnabled() ? "zoom" : "mic";
   state.turnT0 = performance.now();
   state.turn = Turn.createTurn({ pace: paceKey(), textOnly: state.inputSource === "zoom", t0: state.turnT0 });
-  state.turn.step({ type: "mode", remoteVoice: state.voiceOut === "stage", voiceOff: !state.voiceOn, t: state.turnT0 });
+  state.turn.step({ type: "mode", remoteVoice: state.voiceOut === "stage", voiceOff: !voiceActive(), t: state.turnT0 });
   state.intent = readIntent();
   state.goalsAuto = new Set();
   state.goalsManual = new Map();
@@ -880,7 +891,7 @@ async function startMeeting() {
   chars.meeting.react("raise", 1000);
   addSystemLine("面談を開始しました");
   const method = speakerMethod();
-  addSystemLine(`面談の状況：${SITUATION_LABEL[state.situation]}${state.voiceOn ? "" : "（view viewは声を出さず、画面でお伝えします）"}`);
+  addSystemLine(`面談の状況：${SITUATION_LABEL[state.situation]}${voiceActive() ? "" : state.voiceOn ? "（イヤホン未確認のため、声は出さず画面でお伝えします）" : "（view viewは声を出さず、画面でお伝えします）"}`);
   if (state.intent.goals.length) addSystemLine(`今日伝えたいこと（${state.intent.goals.length}件）を、上司の画面に出しています`);
   if (method === "zoom") addSystemLine("Zoomの参加者名で、上司・部下を見分けます");
   else if (method === "manual") addSystemLine("声が近いため、話者は上部のボタンで切り替えます");
@@ -897,7 +908,7 @@ async function startMeeting() {
   addMofuLine(greeting);
   $("stageCaption").textContent = "";
   // 声オフの時は、あいさつも画面だけ
-  if (state.voiceOn) await speakAs("mofu", greeting);
+  if (voiceActive()) await speakAs("mofu", greeting);
   else stageShow({ text: greeting });
   if (state.isRecording) $("stageCaption").textContent = captionIdle();
 }
@@ -1145,7 +1156,7 @@ function showReceiveTip(sig) {
   const now = performance.now();
   if (state.receiveTipAt[sig.id] && now - state.receiveTipAt[sig.id] < RECEIVE_TIP_GAP_MS) return;
   // 自己否定のサインのときだけ、最初に「声でも話す」を選んでいれば短く話しかける（内容は固定の文）
-  if (sig.id === "self_blame" && state.voiceOn && !state.demo && !state.isSpeaking && state.isRecording) {
+  if (sig.id === "self_blame" && voiceActive() && !state.demo && !state.isSpeaking && state.isRecording) {
     setTimeout(() => { if (state.isRecording && !state.isSpeaking) speakAs("mofu", "自分を責めなくて大丈夫です。起きたことと、自分への評価を分けて見てみましょう。"); }, 700);
   }
   state.receiveTipAt[sig.id] = now;
@@ -1340,6 +1351,7 @@ function giveFeedback(kind) {
   state.turnLog.push({ ms: Math.round(performance.now() - state.turnT0), type: "feedback", value: kind, uttId: Number(box.dataset.utt) });
   if (kind === "bad" && ++state.notNeeded >= 2) {
     state.voiceOn = false;
+    renderPrep();
     renderVoiceChip();
     feedTurn({ type: "mode", voiceOff: true });
     toast("ここからは声を控えて、画面だけでお伝えします");
@@ -2305,6 +2317,11 @@ document.querySelectorAll("#situation button").forEach((b) => b.addEventListener
 document.querySelectorAll("#voiceOn button").forEach((b) => b.addEventListener("click", () => setVoiceOn(b.dataset.voice === "on")));
 $("mtSituation").addEventListener("change", (e) => setSituation(e.target.value));
 $("mtVoice").addEventListener("click", () => setVoiceOn(!state.voiceOn));
+$("earphoneOk").addEventListener("change", (e) => {
+  state.earphone = e.target.checked;
+  setVoiceOn(state.voiceOn);
+  saveProfileEdits().catch(() => {});
+});
 $("btnBackToQuestions").addEventListener("click", () => {
   $("questionWrap").hidden = false;
   $("presetPicker").hidden = true;
