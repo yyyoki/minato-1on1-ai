@@ -350,6 +350,9 @@ check("傾向でフォローを変えても、自己否定の見分け（strengt
 
 # ---- 発注書 v17：話者を分けなくても、部下をフォローする ----
 print("\n話者を分けない設定（v17）")
+# 手元の設定（感度など）に左右されないよう、感度「ふつう」・Claude判定オフで固定する
+_orig_load_config = main.load_config
+main.load_config = lambda: {**_orig_load_config(), "sensitivity": "medium", "judge": {"use_claude": False}}
 tc.post("/start-session")
 
 
@@ -390,6 +393,7 @@ check("ふりかえりは、話者を分けない発言も部下の方の発言�
 saved_any = str(main.log_for_disk(dict(main.session_log, started_at="x", receive_summary=rs_any), {}))
 check("既定のログには、分けない発言の本文が入らない", "全然できてないと自分でも思います" not in saved_any)
 main.session_log["started_at"] = None
+main.load_config = _orig_load_config
 
 print("\n失敗 0" if not failed else f"\n失敗 {failed}")
 sys.exit(1 if failed else 0)
