@@ -190,7 +190,7 @@ def clean_metrics(rows, limit: int = 500) -> list[dict]:
         out.append(row)
     return out
 
-SPEAKER_LABELS = {"boss": "上司", "subordinate": "部下"}
+SPEAKER_LABELS = {"boss": "上司", "subordinate": "部下", "any": "会話"}   # any＝話者を分けない（誰の言葉でも、部下のフォローに使う）
 
 
 class AnalyzeRequest(BaseModel):
@@ -802,6 +802,8 @@ SUBORDINATE_SIGNALS = [
             r"(?:私|僕|自分|わたし|ぼく|俺)(?:は|って|なんて|なんか)(?:ダメ|だめ|無能|使えない|できない|役に立たない|向いて|バカ|馬鹿|情けない)",
             r"(?:仕事が|何も|なにも|全然|ぜんぜん)(?:できない|出来ない)(?:人間|やつ|奴|です|だ)",
             r"(?:情けない|ふがいない)", r"自分が(?:嫌|いや)になる", r"役に立てて(?:い)?ない",
+            r"(?:自分でも|私も|僕も)[^。、]{0,8}(?:ダメ|だめ|できてない|出来てない|足りてない|不甲斐ない)",
+            r"(?:ダメ|だめ|できてない|出来てない|足りてない)(?:だ)?(?:と|って)自分(?:でも|で)(?:も)?(?:思|感じ|分かって)",
         ],
         "hint": "部下さんが自分を責める言葉を使っています。まず「話してくれてありがとう」と受け止めてから、事実の話に戻すと安心しやすいです。",
         "forecast": {"perfectionist": "自分を責めているかも", "logical": "結論を急いでいるかも", "sensitive": "気持ちが沈んでいるかも", "independent": "結論を急いでいるかも"},
@@ -880,13 +882,20 @@ def self_blame_hits(text: str) -> list[str]:
     return out
 
 
-def judge_self_blame(text: str, recent_texts: list[str]) -> dict | None:
-    """自己否定として慰めるか。strength: strong（声でも話しかけてよい）/ normal（画面だけ）"""
+POLITE = re.compile(r"です|ます|まし[たて]|でした|ません|ございま|ください")
+
+
+def judge_self_blame(text: str, recent_texts: list[str], any_mode: bool = False) -> dict | None:
+    """自己否定として慰めるか。strength: strong（声でも話しかけてよい）/ normal（画面だけ）
+    any_mode＝話者を分けない設定。上司の「責任は僕にあるよ」を部下の自己否定と取り違えないよう、
+    責任の引き受けだけの発言は、丁寧な言い方か謝罪があるときだけ拾う"""
     evidence = self_blame_hits(text)
     if not evidence:
         return None
     strong = any(STRONG_SELF_WORDS.search(e) for e in evidence)
     if not strong and FORWARD_PLAN.search(text):
+        return None
+    if any_mode and not strong and not (POLITE.search(text) or APOLOGY.search(text)):
         return None
     # 責任の引き受けだけでは画面止まり。謝罪が重なる・直前にも出ていたときは、つらさが続いているとみて声も許す
     if not strong and (APOLOGY.search(text) or any(self_blame_hits(t) for t in recent_texts[-2:])):
@@ -1019,11 +1028,11 @@ def self_rewrite(sig_id: str, text: str, evidence: list[str] | None = None, type
     return {"rewrite": "", "rewrite_example": ""}
 
 
-def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: str):
+def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: str, any_mode: bool = False):
     for sig in SUBORDINATE_SIGNALS:
         extra = {}
         if sig["id"] == "self_blame":
-            extra = judge_self_blame(text, recent_sub_texts)
+            extra = judge_self_blame(text, recent_sub_texts, any_mode)
             if not extra:
                 continue
         elif not any(re.search(p, text) for p in sig["patterns"]):
@@ -1429,11 +1438,69 @@ def describe_sent(result: dict, transcript: str, context: list[str], config: dic
     }
 
 
+# 自分に向けた言葉（「全然できてないと自分でも思います」「なんで気づけなかったんだろう」）は、
+# 上司の厳しい言葉ではない。話者を分けない設定で、上司向けの判定に回さないための目印
+SELF_DIRECTED = re.compile(
+    r"自分でも|(?:私|僕|わたし|ぼく|俺)(?:も|が|は|って|ばっかり|ばかり|なんて)|んだろう|んでしょうか|べきでした|ればよかった|ばよかった|つもりでした"
+)
+
+
+def is_self_directed(text: str) -> bool:
+    return bool(SELF_DIRECTED.search(text))
+
+
+def analyze_any(req: AnalyzeRequest, config: dict, masked_transcript: str, masked_context: list[str]) -> dict:
+    """話者を分けない設定：誰の言葉でも、部下のフォローに使う。
+    ・自己否定のサイン（部下が自分を責める言葉）→ 事実と評価を分ける手がかり
+    ・厳しい言葉（上司の言い方）→ 受け取る側への声かけ
+    部下の発言かもしれないので、外部（Claude）には送らず、端末内のルールだけで判定する"""
+    recent = [c["masked"] for c in session_log["conversations"] if c.get("speaker") in ("subordinate", "any")][-2:]
+    is_demo = req.speaker_source == "demo"
+    if not req.reanalysis:
+        session_log["conversations"].append({
+            "timestamp": datetime.now().isoformat(),
+            "speaker": "any",
+            "speaker_source": req.speaker_source,
+            "speaker_confidence": None,
+            "original": req.transcript,
+            "masked": masked_transcript,
+        })
+    signal = detect_subordinate_signal(masked_transcript, recent, config.get("active_preset", "perfectionist"), any_mode=True)
+    if signal:
+        session_log["subordinate_signals"].append({
+            "timestamp": datetime.now().isoformat(),
+            "transcript": req.transcript,
+            "signal": signal,
+            "demo": is_demo,
+        })
+    if signal or is_self_directed(masked_transcript):
+        why = f"自己否定のサイン（{signal['label']}）" if signal else "自分に向けた言葉のため、言い方の判定はしません"
+        result = {"should_intervene": False, "risk_level": "none", "attack_score": 0, "reason": why, "demo_mode": True}
+    else:
+        result = dict(cached_judge(masked_transcript, masked_context, config, False))
+        session_log["interventions"].append({
+            "timestamp": datetime.now().isoformat(),
+            "transcript": req.transcript,
+            "speaker_source": req.speaker_source,
+            "late": req.reanalysis,
+            "result": dict(result),
+        })
+    result["speaker"] = "any"
+    result["subordinate_signal"] = signal
+    result["sent_data"] = {"external_sent": False, "note": "話者を分けない設定では、発言を外部に送っていません"}
+    return result
+
+
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
     config = load_config()
     masked_transcript = mask_names(req.transcript, config)
     masked_context = [mask_names(c, config) for c in req.context][-6:]
+
+    if req.speaker == "any" and not req.speculative:
+        return JSONResponse(analyze_any(req, config, masked_transcript, masked_context))
+    if req.speaker == "any":   # 先行判定は、話者が分かるときだけ
+        return JSONResponse({"should_intervene": False, "risk_level": "none", "speculative": True})
 
     # 先行判定：記録しない。話者が上司と分かっているときだけ外部確認の対象にする
     if req.speculative:
@@ -1726,7 +1793,7 @@ def receive_summary(log: dict) -> dict:
         "cues": cues,
         "focus": focus,
         "sub_utterances": sum(1 for c in log.get("conversations", [])
-                              if c.get("speaker") == "subordinate" and c.get("speaker_source") != "demo"),
+                              if c.get("speaker") in ("subordinate", "any") and c.get("speaker_source") != "demo"),
     }
 
 

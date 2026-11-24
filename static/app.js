@@ -15,7 +15,7 @@ const CONFIDENCE_LABEL = { high: "確かさ：高", medium: "確かさ：中", l
 const OPTIONS = [["まったく", "当てはまらない"], ["あまり", "当てはまらない"], ["やや", "当てはまる"], ["とても", "当てはまる"]];
 const SENSITIVITY_LABEL = { low: "控えめ", medium: "ふつう", high: "積極的" };
 const SCREENS = ["analyze", "profile", "voices", "meeting", "summary"];
-const WHO = { boss: "上司", subordinate: "部下" };
+const WHO = { boss: "上司", subordinate: "部下", any: "会話" };   // any＝話者を分けない（誰の言葉でも、部下のフォローに使う）
 
 // 声を出さなかった理由（画面に出す言葉）
 const HOLD_REASON = {
@@ -803,8 +803,8 @@ async function startMeeting() {
   state.meeting = {
     startedAt: Date.now(),
     timer: null,
-    utterances: { boss: 0, subordinate: 0 },
-    chars: { boss: 0, subordinate: 0 },
+    utterances: { boss: 0, subordinate: 0, any: 0 },
+    chars: { boss: 0, subordinate: 0, any: 0 },
     interventions: [],
     signals: [],
     lines: [],
@@ -837,9 +837,8 @@ async function startMeeting() {
   state.remoteNoText = 0;
   state.remoteWarned = false;
   state.lastRemoteSpeechAt = 0;
-  // 登録した声が近すぎる時だけ手動。それ以外は登録しなくても自動で見分ける
-  const closeVoices = hasVoices() && state.separation && state.separation.level === "low";
-  setSpeakerMode(closeVoices ? "boss" : "auto");
+  // 既定は、話者を分けない（誰の言葉でも部下のフォローに使う）。上部のボタンで、自動の見分け・上司・部下にも切り替えられる
+  setSpeakerMode("any");
 
   $("transcript").replaceChildren(el("p", "empty", "話し始めると、ここに文字起こしが表示されます"));
   $("speech").hidden = true;
@@ -898,11 +897,12 @@ async function startMeeting() {
 
   chars.meeting.react("raise", 1000);
   addSystemLine("面談を開始しました");
-  if (Env.iOS && state.inputSource !== "zoom") addSystemLine("iPhoneでは声の聞き分けが使えません。上部のボタンで話している人を切り替えるか、名札をクリックして直してください");
+  if (Env.iOS && state.inputSource !== "zoom" && state.speakerMode !== "any") addSystemLine("iPhoneでは声の聞き分けが使えません。上部のボタンで話している人を切り替えるか、名札をクリックして直してください");
   const method = speakerMethod();
   addSystemLine(`面談の状況：${SITUATION_LABEL[state.situation]}${voiceActive() ? "" : state.voiceOn ? "（イヤホン未確認のため、声は出さず画面でお伝えします）" : "（view viewは声を出さず、画面でお伝えします）"}`);
   if (state.intent.goals.length) addSystemLine(`今日伝えたいこと（${state.intent.goals.length}件）を、上司の画面に出しています`);
-  if (method === "zoom") addSystemLine("Zoomの参加者名で、上司・部下を見分けます");
+  if (method === "any") addSystemLine("話者は分けず、聞こえた言葉に合わせて、部下の方をフォローします（厳しい言葉には受け取り方を、自分を責める言葉には事実と評価を分ける手がかりを出します）");
+  else if (method === "zoom") addSystemLine("Zoomの参加者名で、上司・部下を見分けます");
   else if (method === "manual") addSystemLine("声が近いため、話者は上部のボタンで切り替えます");
   else if (method === "online") addSystemLine(`マイクの声＝${WHO[state.localRole]}、会議の音＝${WHO[OTHER_ROLE[state.localRole]]}として見分けます`);
   else if (method === "registered") addSystemLine("登録した声で、上司・部下を自動で見分けます");
@@ -925,6 +925,7 @@ async function startMeeting() {
 // いま話者をどう決めているか
 function speakerMethod() {
   if (state.inputSource === "zoom") return "zoom";
+  if (state.speakerMode === "any") return "any";
   if (state.speakerMode !== "auto") return "manual";
   if (Mic.hasRemote()) return "online";
   return hasVoices() ? "registered" : "diar";
@@ -932,6 +933,7 @@ function speakerMethod() {
 
 function captionIdle() {
   if (state.inputSource === "zoom") return "Zoomの会話を聞いています…（話している人が光ります）";
+  if (state.speakerMode === "any") return "会話を聞いています…（話者は分けずに、部下の方をフォローします）";
   return state.speakerMode === "auto" ? "会話を聞いています…（話している人が光ります）" : `会話を聞いています…（いまの話者：${WHO[state.speakerMode]}）`;
 }
 
@@ -972,14 +974,16 @@ function setStatus(kind, text) {
 
 function updateCounts() {
   const m = state.meeting;
-  $("mtCounts").textContent = m
-    ? `上司 ${m.utterances.boss} ・ 部下 ${m.utterances.subordinate} ・ ひとこと ${voicedCount(m)}`
-    : "上司 0 ・ 部下 0 ・ ひとこと 0";
+  const counts = (m && (m.utterances.any || state.speakerMode === "any"))
+    ? `発言 ${(m.utterances.any || 0) + m.utterances.boss + m.utterances.subordinate}`
+    : m ? `上司 ${m.utterances.boss} ・ 部下 ${m.utterances.subordinate}` : "上司 0 ・ 部下 0";
+  $("mtCounts").textContent = `${counts} ・ ひとこと ${m ? voicedCount(m) : 0}`;
 }
 
 function setSpeakerMode(mode) {
   state.speakerMode = mode;
   state.lastFinalT = performance.now();
+  $("testWho").hidden = mode === "any";   // 分けない時は、テキスト入力でも上司／部下を選ばない
   document.querySelectorAll("#speakerMode button").forEach((b) => {
     const on = b.dataset.mode === mode;
     b.classList.toggle("is-active", on);
@@ -1014,7 +1018,9 @@ function onMeetingFrame({ level, speech, rms, t, remoteSpeech, remoteLevel }) {
   if (state.isSpeaking || state.demo) return;
   const before = state.liveSpeaker;
   const method = speakerMethod();
-  if (method === "manual") {
+  if (method === "any") {
+    state.liveSpeaker = null;   // 分けない時は、話している人を光らせない
+  } else if (method === "manual") {
     state.liveSpeaker = state.speakerMode;
   } else if (method === "online") {
     // 文字が届くのは話し終えた少し後なので、次の人が話し始めるまで直前の話者を保つ
@@ -1202,7 +1208,7 @@ const goalsDoneCount = () => state.intent.goals.filter((_, i) => goalDone(i)).le
 function updateGoals() {
   const m = state.meeting;
   if (!m || !state.intent.goals.length) return;
-  const bossText = m.lines.filter((e) => e.speaker === "boss").map((e) => e.text).join("。");
+  const bossText = m.lines.filter((e) => e.speaker !== "subordinate").map((e) => e.text).join("。");
   let changed = false;
   state.intent.goals.forEach((g, i) => {
     if (!state.goalsAuto.has(i) && goalCoverage(g, bossText) >= 0.5) { state.goalsAuto.add(i); changed = true; }
@@ -1380,6 +1386,7 @@ function assignSpeaker(tFinal, text) {
   const t0 = state.lastFinalT;
   state.lastFinalT = t1;
   const method = speakerMethod();
+  if (method === "any") return { speaker: "any", source: "any", confidence: null, unsure: false };
   if (method === "manual") return { speaker: state.speakerMode, source: "manual", confidence: null, unsure: false };
   if (method === "online") {
     const v = Mic.voicedBetween(t0, t1);
@@ -1405,6 +1412,7 @@ function assignSpeaker(tFinal, text) {
 
 const bubbleTimers = {};
 function showSeatBubble(role, text, interim = false) {
+  if (role !== "boss" && role !== "subordinate") return;   // 話者を分けない時は、席の吹き出しを出さない
   const seat = $(role === "boss" ? "seatBoss" : "seatSub");
   const bubble = seat.querySelector(".seat-bubble");
   const shown = text.length > 64 ? text.slice(0, 63) + "…" : text;
@@ -1464,6 +1472,15 @@ function addMofuLine(text) {
 
 function renderWho(entry) {
   const who = entry.el.querySelector(".who");
+  if (entry.speaker === "any") {
+    who.textContent = WHO.any;
+    who.title = "話者は分けずに、聞こえた言葉に合わせてフォローしています";
+    who.setAttribute("aria-label", "話者は分けていません");
+    who.disabled = true;
+    entry.el.dataset.speaker = "any";
+    return;
+  }
+  who.disabled = false;
   who.textContent = WHO[entry.speaker];
   if (entry.unsure) who.appendChild(el("span", "conf", "?"));
   const conf = entry.confidence != null ? `（声の判定 ${Math.round(entry.confidence * 100)}%）` : "";
@@ -1478,7 +1495,7 @@ function addSpeakerLine(entry) {
   const who = el("button", "who");
   who.type = "button";
   who.addEventListener("click", () => toggleLineSpeaker(entry));
-  const src = { auto: "声で判定", online: "マイク／会議の音", manual: "手動", demo: "デモ", text: "テキスト", zoom: "Zoom" }[entry.source] || "";
+  const src = { any: "", auto: "声で判定", online: "マイク／会議の音", manual: "手動", demo: "デモ", text: "テキスト", zoom: "Zoom" }[entry.source] || "";
   head.append(who, el("time", "", nowTime()), el("span", "src", src));
   line.append(head, el("span", "line-text", entry.text));
   entry.el = line;
@@ -1490,7 +1507,7 @@ async function handleUtterance(text, meta = {}) {
   const m = state.meeting;
   if (!m || !state.isRecording) return;
   const uttId = ++lineSeq;
-  const speakerForTurn = meta.speaker || "boss";
+  const speakerForTurn = !meta.speaker || meta.speaker === "any" ? "boss" : meta.speaker;   // 分けない時も、割り込みの判断は従来どおり
   // view view自身の声を認識したものは、発言として扱わない
   if (feedTurn({ type: "final", uttId, text, who: speakerForTurn, at: meta.at }).some((a) => a.type === "dropEcho")) {
     if (state.meter && meta.mid) state.meter.discard(meta.mid);
@@ -1531,7 +1548,9 @@ async function handleUtterance(text, meta = {}) {
 
 async function analyzeEntry(entry, ctx, live) {
   const m = state.meeting;
-  const isBoss = entry.speaker === "boss";
+  const isAny = entry.speaker === "any";       // 話者を分けない：厳しい言葉の判定も、自己否定の判定も、どちらも使う
+  const isBoss = entry.speaker === "boss" || isAny;
+  const isSub = entry.speaker === "subordinate";
   const thinkingTimer = isBoss ? setTimeout(() => {
     if (!state.isSpeaking) {
       mofuSetState("thinking");
@@ -1565,21 +1584,24 @@ async function analyzeEntry(entry, ctx, live) {
   if (result.sent_data) $("dataPreview").textContent = JSON.stringify(result.sent_data, null, 2);
   if (showProfile()) entry.el.title = result.reason || "";
 
-  if (!isBoss) {
-    const sig = result.subordinate_signal;
+  const sig = result.subordinate_signal;
+  if (isSub || isAny) {
     if (sig) {
       entry.el.classList.add("is-signal");
       entry.el.appendChild(el("span", "tag tag-signal", "💭 " + sig.label));
       m.signals.push({ time: entry.time, transcript: entry.text, label: sig.label, hint: sig.hint });
       setForecast("signal", sig.forecast);
-      showHint("sub", "💭 部下さんのサイン", sig.hint, "部下の発言から：" + sig.label);
+      // 上司向けのヒントは、話者を分けない時は出さない（誰が見ているか分からないため）。部下の方への声かけ・画面の案内は出す
+      if (isSub) showHint("sub", "💭 部下さんのサイン", sig.hint, "部下の発言から：" + sig.label);
       if (live) showReceiveTip(sig);
-    } else {
+    } else if (isSub) {
       if ($("forecast").dataset.level !== "calm") people.subordinate.flash("relieved", 2200);
       setForecast("calm");
     }
-    backToListening();
-    return;
+    if (isSub) {
+      backToListening();
+      return;
+    }
   }
 
   entry.analyzedAsBoss = true;
@@ -1620,7 +1642,7 @@ async function analyzeEntry(entry, ctx, live) {
     if (live && entry.epoch === state.epoch) feedTurn({ type: "verdict", uttId: entry.id, prio: "none", text: entry.text });
     const score = result.attack_score || 0;
     const risk = result.risk_level || "none";
-    setForecast(score >= 4 || risk === "low" || risk === "medium" ? "mild" : "calm");
+    if (!sig) setForecast(score >= 4 || risk === "low" || risk === "medium" ? "mild" : "calm");
     if (state.turn && state.turn.idle) backToListening();
   }
 }
@@ -1653,6 +1675,7 @@ function backToListening() {
 
 // 話者をあとから直す（自動判定の間違いを1クリックで回復）
 function toggleLineSpeaker(entry) {
+  if (entry.speaker === "any") return;   // 分けていない発言は、直す対象がない
   const m = state.meeting;
   if (!m || !state.isRecording) { toast("面談中だけ直せます"); return; }
   const from = entry.speaker;
@@ -1835,7 +1858,7 @@ function initRecognition() {
         // view viewの発話中も聞き続ける（人が話し始めたら譲るため）
         const echo = feedTurn({ type: "interim", text }).some((a) => a.type === "dropEcho");
         if (echo || state.isSpeaking) continue;
-        const who = state.liveSpeaker || (state.speakerMode !== "auto" ? state.speakerMode : null);
+        const who = state.liveSpeaker || (state.speakerMode !== "auto" && state.speakerMode !== "any" ? state.speakerMode : null);
         if (who) showSeatBubble(who, text, true);
         else $("stageCaption").textContent = text + "…";
       }
@@ -2023,6 +2046,11 @@ function renderSummary() {
   $("smBoss").textContent = m.utterances.boss;
   $("smSub").textContent = m.utterances.subordinate;
   $("smInterv").textContent = count;
+  // 話者を分けなかった面談は、上司・部下ごとの発言数と話した割合が出せない
+  const unsplit = m.utterances.any > 0 && m.utterances.boss + m.utterances.subordinate === 0;
+  document.querySelectorAll(".stat-boss, .stat-sub").forEach((c) => (c.hidden = unsplit));
+  const ratioCard = $("smRatio").closest(".card");
+  if (ratioCard) ratioCard.hidden = unsplit;
 
   const total = m.chars.boss + m.chars.subordinate;
   const bossPct = total ? Math.round((m.chars.boss / total) * 100) : 0;
@@ -2410,7 +2438,7 @@ $("testForm").addEventListener("submit", (e) => {
   if (!text) return;
   if (state.isSpeaking || state.demo) { toast(`${charName()}が話し終わってから送信してください`); return; }
   input.value = "";
-  handleUtterance(text, { speaker: state.testWho, source: "text" });
+  handleUtterance(text, { speaker: state.speakerMode === "any" ? "any" : state.testWho, source: "text" });
 });
 
 $("btnSettings").addEventListener("click", openDrawer);
@@ -2430,7 +2458,7 @@ document.addEventListener("keydown", (e) => {
     chooseAnswer(Number(e.key) - 1);
   }
   if (screen === "meeting" && state.isRecording && $("drawer").hidden) {
-    const mode = { 0: "auto", 1: "boss", 2: "subordinate" }[e.key];
+    const mode = { 0: "auto", 1: "boss", 2: "subordinate", 3: "any" }[e.key];
     if (mode) setSpeakerMode(mode);
     if (e.key === "v" || e.key === "V") setVoiceOn(!state.voiceOn);
   }

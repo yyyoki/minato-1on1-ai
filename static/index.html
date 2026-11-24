@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>view view｜1on1見守りAI</title>
-  <link rel="stylesheet" href="/static/style.css?v=19">
+  <link rel="stylesheet" href="/static/style.css?v=20">
 </head>
 <body>
 <div id="app" data-screen="start">
@@ -332,6 +332,7 @@
         <div class="speaker-mode" id="speakerMode" role="radiogroup" aria-label="話者の見分け方">
           <span class="sm-label">話者</span>
           <span class="zoom-badge">Zoomの参加者名で判定</span>
+          <button type="button" data-mode="any" role="radio" title="話者は分けず、聞こえた言葉に合わせて部下の方をフォローする（キー 3）">分けない<kbd>3</kbd></button>
           <button type="button" data-mode="auto" role="radio" title="声の違い・話し方・音の出どころで自動判定（キー 0）">自動<kbd>0</kbd></button>
           <button type="button" data-mode="boss" role="radio" title="これからの発言をすべて上司として扱う（キー 1）"><i class="sw sw-boss"></i>上司<kbd>1</kbd></button>
           <button type="button" data-mode="subordinate" role="radio" title="これからの発言をすべて部下として扱う（キー 2）"><i class="sw sw-sub"></i>部下<kbd>2</kbd></button>
@@ -665,7 +666,7 @@
 <script src="/static/metrics.js?v=12"></script>
 <script src="/static/audio.js?v=17"></script>
 <script src="/static/stage_link.js?v=3"></script>
-<script src="/static/app.js?v=28"></script>
+<script src="/static/app.js?v=29"></script>
 <script src="/static/measure.js?v=13"></script>
 </body>
 </html>

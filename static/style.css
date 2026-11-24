@@ -771,7 +771,7 @@ select { font: inherit; color: inherit; }
 }
 .speaker-mode button:disabled { opacity: .4; cursor: not-allowed; }
 .speaker-mode button.is-active { background: #fff; box-shadow: var(--shadow-1); color: var(--ink); }
-.speaker-mode button[data-mode="auto"].is-active { color: var(--primary); }
+.speaker-mode button[data-mode="auto"].is-active, .speaker-mode button[data-mode="any"].is-active { color: var(--primary); }
 .speaker-mode button[data-mode="boss"].is-active { color: var(--boss); }
 .speaker-mode button[data-mode="subordinate"].is-active { color: var(--sub); }
 kbd { font-family: inherit; font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: #fff; line-height: 1.5; }

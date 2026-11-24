@@ -348,5 +348,48 @@ check("あきらめ・謝罪の連続も傾向で言い回しが変わる",
 check("傾向でフォローを変えても、自己否定の見分け（strength）は変わらない",
       len({main.detect_subordinate_signal("私のせいです", [], k)["strength"] for k in types}) == 1)
 
+# ---- 発注書 v17：話者を分けなくても、部下をフォローする ----
+print("\n話者を分けない設定（v17）")
+tc.post("/start-session")
+
+
+def any_say(t):
+    r = tc.post("/analyze", json={"transcript": t, "speaker": "any", "speaker_source": "text"}).json()
+    return r
+
+
+HARSH = ["全然できてないじゃん", "なんでもっと早く相談しなかったの？", "何回言ったらわかるの", "使えないな", "もっとちゃんとやって",
+         "期待してたのに残念だよ", "はぁ…もういいよ", "いつまでかかってるの", "普通はこうするでしょ"]
+for t in HARSH:
+    r = any_say(t)
+    check(f"厳しい言葉は、誰の発言か分からなくても受け取る側へのフォローが出る：{t}", r["should_intervene"] and not r["subordinate_signal"])
+for t in ["先週の資料、進捗どうなってる？", "そうだね。どういう経緯だったか教えてもらえる？", "責任は僕にあるよ、ごめん", "僕のせいだ、ごめん",
+          "ちゃんとやってくれてありがとう", "なんでも相談してね"]:
+    r = any_say(t)
+    check(f"ふつうの言葉・上司の責任表明には、何も出さない：{t}", not r["should_intervene"] and not r["subordinate_signal"])
+for t in ["自分なんてダメです", "どうせ私なんて", "何回も同じミスをしてしまって、本当に情けないです", "全然できてないと自分でも思います"]:
+    r = any_say(t)
+    check(f"自分を責める言葉には、事実と評価を分ける手がかりが出る（上司向けの判定にはしない）：{t}",
+          r["subordinate_signal"] and r["subordinate_signal"]["id"] == "self_blame" and not r["should_intervene"] and r["subordinate_signal"]["objective"]["question"])
+for t in ["なんで気づけなかったんだろう", "もっとちゃんとやるべきでした", "いつまでかかってるんだと自分でも思います", "なんで私ばっかりこうなるんだろう"]:
+    r = any_say(t)
+    check(f"自分に向けた言葉を、上司の厳しい言葉と取り違えない：{t}", not r["should_intervene"])
+for t in ["上司に使えないと言われました", "全然できてないじゃんって言われて落ち込んでいます"]:
+    check(f"人から言われた厳しい言葉を引きずっている時は、受け取り方の声かけが出る：{t}", any_say(t)["should_intervene"])
+for t in ["この案はダメだと思います", "データがまだ足りてないと思います", "明日までは無理です"]:
+    r = any_say(t)
+    check(f"仕事の話は、自己否定にも厳しい言葉にもしない：{t}", not r["subordinate_signal"] and not r["should_intervene"])
+check("責任の引き受けだけで言い方が砕けている発言は、部下の自己否定と取り違えない（上司の「僕のせいだ」）", not any_say("俺のせいだ")["subordinate_signal"])
+r = any_say("私のせいです、すみません")
+check("丁寧な責任の引き受け＋謝罪は、部下の自己否定として拾う", r["subordinate_signal"] and r["subordinate_signal"]["strength"] == "strong")
+r = any_say("私のせいで資料が遅れてしまいました")
+check("同上：責任の引き受け（画面だけ）", r["subordinate_signal"] and r["subordinate_signal"]["id"] == "self_blame")
+check("話者を分けない設定では、発言を外部に送らない", all(not any_say(t)["sent_data"]["external_sent"] for t in HARSH[:3]))
+rs_any = main.receive_summary(main.session_log)
+check("ふりかえりは、話者を分けない発言も部下の方の発言として数える", rs_any["sub_utterances"] > 0 and rs_any["self_negation"] > 0)
+saved_any = str(main.log_for_disk(dict(main.session_log, started_at="x", receive_summary=rs_any), {}))
+check("既定のログには、分けない発言の本文が入らない", "全然できてないと自分でも思います" not in saved_any)
+main.session_log["started_at"] = None
+
 print("\n失敗 0" if not failed else f"\n失敗 {failed}")
 sys.exit(1 if failed else 0)
