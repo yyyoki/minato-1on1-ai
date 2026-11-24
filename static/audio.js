@@ -4,6 +4,15 @@
 // 録音データは持たない。保持するのは直近30秒ぶんの特徴量（数値）だけ。
 // マイクはこの1本だけを開き、音声認識にも同じ音を渡す（会議アプリと取り合わないため）。
 // オンライン会議では「会議の音」（タブやシステムの音声）も受け取り、相手が話している時間を数える。
+// ブラウザの種類（Safari / iPhone で挙動を変えるため）
+const Env = (() => {
+  const ua = navigator.userAgent || "";
+  const iOS = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const safari = iOS || (/Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/.test(ua));
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  return { iOS, safari, SR, hasRecognition: !!SR };
+})();
+
 const Mic = (() => {
   // 自動音量調整を切る：オンだとChromeがPC全体のマイク音量を書き換え、会議アプリの声まで小さくなる
   const CONSTRAINTS = { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
@@ -351,8 +360,8 @@ const Voice = (() => {
       u.onend = () => { if (!began) onStart(); finish(true); };
       u.onerror = () => finish(false);
       speechSynthesis.speak(u);
-      // Chromeは長い発話が途中で止まるため、定期的に pause/resume して継続させる
-      const watchdog = setInterval(() => {
+      // Chromeは長い発話が途中で止まるため、定期的に pause/resume して継続させる（Safariでは不要で、かえって途切れる）
+      const watchdog = Env.safari ? 0 : setInterval(() => {
         if (speechSynthesis.speaking) { speechSynthesis.pause(); speechSynthesis.resume(); }
       }, 8000);
       const timeout = setTimeout(() => { speechSynthesis.cancel(); finish(false); }, 20000);

@@ -46,7 +46,7 @@ const Measure = (() => {
   }
 
   function newRecognition() {
-    const r = new webkitSpeechRecognition();
+    const r = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     r.lang = "ja-JP";
     r.continuous = true;
     r.interimResults = true;
@@ -74,8 +74,8 @@ const Measure = (() => {
 
   async function start() {
     setError("");
-    if (!("webkitSpeechRecognition" in window)) {
-      setError("このブラウザは音声認識に対応していません。Chromeでお試しください。");
+    if (!("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
+      setError("このブラウザは音声認識に対応していません。ChromeかSafariの新しい版でお試しください。");
       return;
     }
     try {

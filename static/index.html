@@ -70,7 +70,7 @@
 
       <p class="trust-note">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-        上司・部下の声の聞き分けはブラウザ内だけで行い、ログはこのPC内にのみ保存されます（文字起こしはChromeの音声認識を使用）
+        上司・部下の声の聞き分けはブラウザ内だけで行い、ログはこのPC内にのみ保存されます（文字起こしはブラウザの音声認識を使用）
       </p>
     </section>
 
@@ -154,7 +154,7 @@
             <div class="bubble bubble-top" id="profileBubble">わかりました！今日はこの特性に合わせて、そっと見守りますね。</div>
             <button class="btn btn-primary btn-lg btn-block" id="btnToVoices" type="button">次へ：面談の準備</button>
             <button class="btn btn-ghost btn-block" id="btnReanalyze" type="button">分析をやり直す</button>
-            <p class="hint">次の画面でマイクの使用許可を求められます。Chromeでご利用ください。</p>
+            <p class="hint">次の画面でマイクの使用許可を求められます。Chrome（パソコン）またはSafari（Mac・iPhone）でご利用ください。</p>
           </div>
         </aside>
       </div>
@@ -318,7 +318,7 @@
           <button class="btn btn-ghost btn-lg" id="btnPractice" type="button">面談の前に：受け取り方の練習（5問）</button>
         </div>
         <p class="hint" id="voicesHint">自動の判定を間違えたときは、会話ログの名前の札をクリックすると直せます。</p>
-        <p class="hint privacy-hint">保存するのは声の特徴を表す数値だけで、このブラウザのメモリにだけ置きます。録音した音声は保存しません。文字起こしのため、マイクと会議の音はChromeの音声認識（Google）に送られます。</p>
+        <p class="hint privacy-hint">保存するのは声の特徴を表す数値だけで、このブラウザのメモリにだけ置きます。録音した音声は保存しません。文字起こしのため、マイクと会議の音はブラウザの音声認識サービス（ChromeはGoogle、SafariはApple）に送られます。</p>
       </div>
     </section>
 
@@ -550,7 +550,7 @@
             <ul class="measure-notes">
               <li>静かな場所で、面談と同じマイクと姿勢で行ってください</li>
               <li>「間をあけて」の指示がある2文は、指示どおり約1秒止めてください</li>
-              <li>文字起こしのため、音声はChromeから外部へ送られます。保存するのは時間・件数・一致率だけで、文の本文は保存しません</li>
+              <li>文字起こしのため、音声はブラウザの音声認識サービス（ChromeはGoogle、SafariはApple）へ送られます。保存するのは時間・件数・一致率だけで、文の本文は保存しません</li>
             </ul>
             <p class="muted" id="mError" hidden></p>
             <div class="cta-row">
@@ -663,9 +663,9 @@
 <script src="/static/people.js?v=12"></script>
 <script src="/static/turn.js?v=13"></script>
 <script src="/static/metrics.js?v=12"></script>
-<script src="/static/audio.js?v=15"></script>
+<script src="/static/audio.js?v=16"></script>
 <script src="/static/stage_link.js?v=3"></script>
-<script src="/static/app.js?v=26"></script>
-<script src="/static/measure.js?v=12"></script>
+<script src="/static/app.js?v=27"></script>
+<script src="/static/measure.js?v=13"></script>
 </body>
 </html>

@@ -554,7 +554,7 @@ function setForm(form) {
 
 async function shareMeetingAudio() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    toast("このブラウザは会議の音の共有に対応していません。Chromeをお使いください。");
+    toast(Env.iOS ? "iPhoneでは会議の音の共有ができません。パソコンのChromeでお使いください。" : "このブラウザは会議の音の共有に対応していません。Chromeをお使いください。");
     return;
   }
   if (!Mic.isOn()) {
@@ -875,21 +875,23 @@ async function startMeeting() {
 
   // Zoomモードでは、このPCのマイクを使わない（声の登録で開いていれば閉じる）
   if (state.inputSource === "zoom" && Mic.isOn()) Mic.stop();
-  if (state.inputSource !== "zoom" && !Mic.isOn()) {
+  // iPhoneは、マイクを2つの用途（声の特徴と音声認識）で同時に開くと、片方が止まることがある。音声認識を優先して声の特徴は取らない
+  if (state.inputSource !== "zoom" && !Mic.isOn() && !Env.iOS) {
     try { await Mic.start(); } catch (e) { /* 音量表示なしで続行（音声認識側でも許可を求める） */ }
   }
   if (state.inputSource !== "zoom" && Mic.isOn()) state.meeting.unsubMic = Mic.onFrame(onMeetingFrame);
 
   if (state.inputSource === "zoom") {
     openZoomFeed();
-  } else if (!("webkitSpeechRecognition" in window)) {
+  } else if (!Env.hasRecognition) {
     state.micBlocked = true;
     setStatus("error", "音声認識に未対応");
-    toast("このブラウザは音声認識に対応していません。Chromeをお使いください（テキスト入力で試せます）。");
+    toast("このブラウザは音声認識に対応していません。ChromeかSafariの新しい版をお使いください（テキスト入力で試せます）。");
   }
 
   chars.meeting.react("raise", 1000);
   addSystemLine("面談を開始しました");
+  if (Env.iOS && state.inputSource !== "zoom") addSystemLine("iPhoneでは声の聞き分けが使えません。上部のボタンで話している人を切り替えるか、名札をクリックして直してください");
   const method = speakerMethod();
   addSystemLine(`面談の状況：${SITUATION_LABEL[state.situation]}${voiceActive() ? "" : state.voiceOn ? "（イヤホン未確認のため、声は出さず画面でお伝えします）" : "（view viewは声を出さず、画面でお伝えします）"}`);
   if (state.intent.goals.length) addSystemLine(`今日伝えたいこと（${state.intent.goals.length}件）を、上司の画面に出しています`);
@@ -1805,7 +1807,7 @@ async function receiveZoomUtterance(ev) {
 
 // ---------- 音声認識（インスタンスを使い回して安定化） ----------
 function initRecognition() {
-  const r = new webkitSpeechRecognition();
+  const r = new Env.SR();
   r.lang = "ja-JP";
   r.continuous = true;
   r.interimResults = true;
@@ -1838,7 +1840,7 @@ function initRecognition() {
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       state.micBlocked = true;
       setStatus("error", "マイク未許可（テキスト入力のみ）");
-      toast("マイクの使用が許可されていません。アドレスバー左のアイコンから許可してください。");
+      toast(Env.iOS ? "マイクの使用が許可されていません。設定アプリの「Safari」→「マイク」から許可してください。" : "マイクの使用が許可されていません。アドレスバー左のアイコンから許可してください。");
       return;
     }
     console.error("[認識] エラー:", event.error);
@@ -1853,7 +1855,7 @@ function initRecognition() {
 }
 
 function startRecognition() {
-  if (!state.isRecording || state.micBlocked || state.demo || state.recPaused || state.inputSource === "zoom" || !("webkitSpeechRecognition" in window)) return;
+  if (!state.isRecording || state.micBlocked || state.demo || state.recPaused || state.inputSource === "zoom" || !Env.hasRecognition) return;
   if (!state.recognition) state.recognition = initRecognition();
   // このアプリが開いたマイク（＋会議の音）をそのまま渡す。音声認識が自分でマイクを開き直さないようにする
   const track = state.trackUnsupported ? null : Mic.recognitionTrack();
