@@ -783,6 +783,13 @@ StageLink.onChange((ev) => {
 // ---------- ⑤ 面談 ----------
 async function startMeeting() {
   Voice.warmup();
+  // iPhoneのSafariは、音声認識の開始もマイク許可の確認も「タップした瞬間」でないと通さない。最初の await より前に始めておく
+  if (Env.iOS && Env.hasRecognition && !zoomEnabled()) {
+    try {
+      if (!state.recognition) state.recognition = initRecognition();
+      state.recognition.start();
+    } catch (e) { /* すでに開始済み */ }
+  }
   if (rec) finishRecord();
   stopTry();
   try {
@@ -1813,7 +1820,7 @@ function initRecognition() {
   r.interimResults = true;
 
   r.onresult = (event) => {
-    if (state.demo || state.recPaused) return;
+    if (state.demo || state.recPaused || !state.isRecording) return;
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const res = event.results[i];
       const text = res[0].transcript.trim();
@@ -1837,12 +1844,22 @@ function initRecognition() {
 
   r.onerror = (event) => {
     if (event.error === "no-speech" || event.error === "aborted") return;
-    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+    if (event.error === "service-not-allowed") {
+      // Safariは、端末の「音声入力（Siriと音声入力）」がオフだと音声認識を使えない
       state.micBlocked = true;
-      setStatus("error", "マイク未許可（テキスト入力のみ）");
-      toast(Env.iOS ? "マイクの使用が許可されていません。設定アプリの「Safari」→「マイク」から許可してください。" : "マイクの使用が許可されていません。アドレスバー左のアイコンから許可してください。");
+      setStatus("error", "音声入力がオフです（テキスト入力のみ）");
+      addSystemLine(Env.iOS ? "音声認識が使えません。設定アプリ →「一般」→「キーボード」→「音声入力」をオンにしてから、開き直してください（エラー：service-not-allowed）" : "音声認識が使えません。システム設定 →「キーボード」→「音声入力」をオンにしてください（エラー：service-not-allowed）");
+      toast("端末の「音声入力」がオフのようです。画面の案内を見てください。");
       return;
     }
+    if (event.error === "not-allowed") {
+      state.micBlocked = true;
+      setStatus("error", "マイク未許可（テキスト入力のみ）");
+      addSystemLine(Env.iOS ? "マイクが許可されていません。設定アプリ →「Safari」→「マイク」を「確認」か「許可」にして、ページを開き直してください（エラー：not-allowed）" : "マイクが許可されていません。アドレスバー左のアイコンから許可してください（エラー：not-allowed）");
+      toast("マイクの使用が許可されていません。画面の案内を見てください。");
+      return;
+    }
+    if (Env.iOS) addSystemLine(`音声認識のエラー：${event.error}`);
     console.error("[認識] エラー:", event.error);
   };
 
