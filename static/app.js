@@ -1164,9 +1164,9 @@ function showReceiveTip(sig) {
   if (!text) return;
   const now = performance.now();
   if (state.receiveTipAt[sig.id] && now - state.receiveTipAt[sig.id] < RECEIVE_TIP_GAP_MS) return;
-  // 自己否定のサインのときだけ、最初に「声でも話す」を選んでいれば短く話しかける（内容は固定の文）
-  if (sig.id === "self_blame" && voiceActive() && !state.demo && !state.isSpeaking && state.isRecording) {
-    setTimeout(() => { if (state.isRecording && !state.isSpeaking) speakAs("mofu", "自分を責めなくて大丈夫です。起きたことと、自分への評価を分けて見てみましょう。"); }, 700);
+  // 自己否定のサインのうち、重いとき（strong）だけ、最初に「声でも話す」を選んでいれば短く話しかける（内容は固定の文）。軽いときは画面だけ
+  if (sig.id === "self_blame" && sig.strength !== "normal" && voiceActive() && !state.demo && !state.isSpeaking && state.isRecording) {
+    setTimeout(() => { if (state.isRecording && !state.isSpeaking) speakAs("mofu", sig.voice || "自分を責めなくて大丈夫です。起きたことと、自分への評価を分けて見てみましょう。"); }, 700);
   }
   state.receiveTipAt[sig.id] = now;
   const result = { cushion_phrase: "", reframed_speech: text, reply_example: sig.rewrite_example || "", reply_label: "言い直しの例", objective: sig.objective || null };

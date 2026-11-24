@@ -41,8 +41,39 @@ function readWav(file) {
 }
 
 // noise: 部屋の雑音を模した白色雑音（信号RMSに対する比）。maxSec: 冒頭だけ使う。gain: 声の大きさ
-function frames(file, { noise = 0, maxSec = Infinity, gain = 1 } = {}) {
+// speed: 再生速度の比（声の高さと声色が同時にずれる。声の調子の違いの模擬）／ tilt: 高音寄り(+)・低音寄り(−)の音質変化（マイクとの距離・向きの模擬）
+// reverb: 部屋の反響の強さ（0〜1）
+function frames(file, { noise = 0, maxSec = Infinity, gain = 1, speed = 1, tilt = 0, reverb = 0 } = {}) {
   let { sr, samples } = readWav(file);
+  if (speed !== 1) {
+    const out = new Float32Array(Math.floor(samples.length / speed));
+    for (let i = 0; i < out.length; i++) {
+      const p = i * speed, k = Math.floor(p), f = p - k;
+      out[i] = samples[k] * (1 - f) + (samples[Math.min(k + 1, samples.length - 1)] || 0) * f;
+    }
+    samples = out;
+  }
+  if (tilt) {
+    const out = new Float32Array(samples.length);
+    // tilt>0: 1次の高域強調、tilt<0: 1次の低域通過
+    for (let i = 0; i < samples.length; i++) {
+      out[i] = tilt > 0 ? samples[i] - tilt * (i ? samples[i - 1] : 0) : (1 + tilt) * samples[i] - tilt * (i ? out[i - 1] : 0);
+    }
+    samples = out;
+  }
+  if (reverb) {
+    // まばらな反射（約0.25秒まで、指数で減衰）を足す。同じ設定なら毎回同じ反響になる
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const taps = Array.from({ length: 36 }, (_, t) => ({ d: Math.floor(sr * (0.004 + rnd() * 0.25)), g: reverb * (rnd() * 2 - 1) * Math.exp(-t / 14) }));
+    const out = new Float32Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      let v = samples[i];
+      for (const t of taps) if (i >= t.d) v += t.g * samples[i - t.d];
+      out[i] = v;
+    }
+    samples = out;
+  }
   if (noise) {
     let sum = 0;
     for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
@@ -52,11 +83,13 @@ function frames(file, { noise = 0, maxSec = Infinity, gain = 1 } = {}) {
     samples = samples.map((v) => v + rnd() * level);
   }
   const vad = VP.createVad();
+  const noiseModel = VP.createNoiseModel();   // アプリと同じ：毎フレームで雑音を見積もり、特徴を取るときに引く
   const hop = Math.round(sr * 0.04);
   const res = [];
   for (let s = 0; s + VP.N <= samples.length; s += hop) {
     const chunk = samples.slice(s, s + VP.N).map((v) => v * gain);
-    const f = VP.frameFeatures(chunk, sr);
+    noiseModel.update(chunk);   // 話している最中でも毎フレーム更新する（最小統計法）
+    const f = VP.frameFeatures(chunk, sr, noiseModel);
     if (vad(f.rms)) res.push(f);
     if (res.length * 0.04 >= maxSec) break;
   }

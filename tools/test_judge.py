@@ -290,5 +290,63 @@ og = main.detect_subordinate_signal("私が悪くて、資料の提出が遅れ�
 check("事実と評価を分けて返す", og["fact"] == "資料の提出が遅れてしまいました" and og["judgement"] == "私が悪く")
 check("問いは評価の決めつけではなく、事実か評価かを聞く", all("べき" not in q and "ダメ" not in q for q in main.OBJECTIVE_QUESTIONS))
 
+# ---- 発注書 v14：自己否定かどうかの見分け ----
+print("\n自己否定の見分け（v14）")
+
+
+def sb(t, recent=()):
+    return main.detect_subordinate_signal(t, list(recent), "perfectionist")
+
+
+for t in ["自分なんてダメです", "どうせ私なんて", "私は使えない人間です", "私は向いていないと思います"]:
+    s = sb(t)
+    check(f"重い自己否定は声も許す（strong）：{t}", s and s["id"] == "self_blame" and s["strength"] == "strong")
+for t in ["私のせいです", "何をやっても怒られるだけです"]:
+    s = sb(t)
+    check(f"自己否定だが画面だけ（normal）：{t}", s and s["id"] == "self_blame" and s["strength"] == "normal")
+check("謝罪が重なれば声も許す", sb("私のせいです、すみません")["strength"] == "strong")
+check("直前にも自己否定があれば声も許す", sb("私のせいです", ["私が悪かったです"])["strength"] == "strong")
+for t in ["私のせいではありません", "私が悪くないと思います", "彼は向いてないと思います", "お客様が情けないと言っていました",
+          "私は使えないって言われました", "どうせなら今日やります", "何をやっても楽しいです",
+          "私のせいです。次から確認を徹底します", "今回の遅れは私の責任です。今後は早めに共有します"]:
+    check(f"自己否定として慰めない：{t}", (sb(t) or {}).get("id") != "self_blame")
+check("責任を引き受けた上でも、重い自己否定が混じれば慰める", (sb("私は使えない人間でした。次から気をつけます") or {}).get("id") == "self_blame")
+check("他人の話でも、自分の発言なら拾う（私のせいでお客様が…）", (sb("私のせいでお客様が怒ってしまいました") or {}).get("id") == "self_blame")
+check("「もう無理です」はあきらめのサイン", (sb("もう無理です") or {}).get("id") == "give_up")
+for t in ["明日までは無理です", "今週中は物理的に無理です"]:
+    check(f"期限の断りはあきらめにしない：{t}", sb(t) is None)
+check("当たった言葉を根拠として返す", sb("私が悪くて、資料の提出が遅れました")["objective"]["judgement"] == "私が悪く")
+
+# ---- 発注書 v15：傾向に合わせたフォロー ----
+print("\n傾向に合わせたフォロー（v15）")
+types = list(main.SELF_BLAME_STYLE)
+check("4つの傾向すべてに文面がある", set(types) == set(main.TYPE_KEYS) and set(main.GIVE_UP_STYLE) == set(main.TYPE_KEYS) == set(main.OVER_APOLOGY_STYLE))
+texts_v15 = []
+for k in types:
+    st = main.SELF_BLAME_STYLE[k]
+    texts_v15 += [st["event"], st["plain"], st["voice"], *st["questions"], *main.GIVE_UP_STYLE[k], *main.OVER_APOLOGY_STYLE[k]]
+labels_v15 = [p["label"] for p in main.DEFAULT_PRESETS.values()] + [main.DIM_LABELS[k] for k in main.TYPE_KEYS]
+check("傾向の名前や「タイプ」を画面にも声にも出さない", not any(lb in t for t in texts_v15 for lb in labels_v15) and not any("タイプ" in t for t in texts_v15))
+check("声は40字以内で、性格の話をせず、上司の言い方として検出されない・上司の意図を代弁しない",
+      all(len(main.SELF_BLAME_STYLE[k]["voice"]) <= 40 and main.speech_is_safe(main.SELF_BLAME_STYLE[k]["voice"], pcfg)
+          and not main.find_attack_matches(main.SELF_BLAME_STYLE[k]["voice"]) and "だと思います" not in main.SELF_BLAME_STYLE[k]["voice"] for k in types)
+      and len(main.DEFAULT_SELF_BLAME_STYLE["voice"]) <= 40)
+check("問いは評価を決めつけない（「べき」「ダメ」を使わない）",
+      all("べき" not in q and "ダメ" not in q for k in types for q in main.SELF_BLAME_STYLE[k]["questions"]))
+check("文面は「起きたこと」を引用でき、性格に関係なく人格を否定しない", all("{e}" in main.SELF_BLAME_STYLE[k]["event"] for k in types))
+for k in types:
+    s = main.detect_subordinate_signal("私が悪くて、資料の提出が遅れてしまいました", [], k)
+    check(f"{k}：自己否定に傾向別の文・問い・声が付き、出来事を引用する",
+          s and "資料の提出が遅れてしまいました" in s["rewrite"] and s["voice"] == main.SELF_BLAME_STYLE[k]["voice"]
+          and s["objective"]["question"] in main.SELF_BLAME_STYLE[k]["questions"])
+rw = {k: main.detect_subordinate_signal("自分なんてダメです", [], k)["rewrite"] for k in types}
+check("傾向ごとに言い回しが違う", len(set(rw.values())) == 4)
+check("傾向が分からないときは従来の文のまま", main.detect_subordinate_signal("自分なんてダメです", [], "unknown")["voice"] == main.DEFAULT_SELF_BLAME_STYLE["voice"])
+check("あきらめ・謝罪の連続も傾向で言い回しが変わる",
+      len({main.self_rewrite("give_up", "x", None, k)["rewrite"] for k in types}) == 4
+      and len({main.self_rewrite("over_apology", "x", None, k)["rewrite"] for k in types}) == 4)
+check("傾向でフォローを変えても、自己否定の見分け（strength）は変わらない",
+      len({main.detect_subordinate_signal("私のせいです", [], k)["strength"] for k in types}) == 1)
+
 print("\n失敗 0" if not failed else f"\n失敗 {failed}")
 sys.exit(1 if failed else 0)

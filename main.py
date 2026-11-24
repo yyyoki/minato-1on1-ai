@@ -796,7 +796,9 @@ SUBORDINATE_SIGNALS = [
             r"(?:私|僕|自分|わたし|ぼく|俺)の.{0,8}(?:が悪くて|が悪かった|が甘かった|が足りなくて|が足りなかった)",
             r"(?:向いて(?:い)?ない|力不足|能力が(?:足りない|ない))",
             r"ダメ(?:な|だ)(?:人間|やつ|奴)",
-            r"(?:どうせ|何をやっても|なにをやっても)",
+            # 「どうせなら」「何をやっても楽しい」は自己否定ではない。後ろに否定的な言葉が続くときだけ拾う
+            r"どうせ(?!なら|だったら|ついで|だから).{0,12}?(?:無理|ダメ|だめ|できない|変わらない|無駄|むだ|ムダ|私|僕|自分|わたし|ぼく|俺|怒られ)",
+            r"(?:何をやっても|なにをやっても).{0,10}?(?:うまくいかない|ダメ|だめ|無駄|変わらない|怒られ|足りない|できない|同じ)",
             r"(?:私|僕|自分|わたし|ぼく|俺)(?:は|って|なんて|なんか)(?:ダメ|だめ|無能|使えない|できない|役に立たない|向いて|バカ|馬鹿|情けない)",
             r"(?:仕事が|何も|なにも|全然|ぜんぜん)(?:できない|出来ない)(?:人間|やつ|奴|です|だ)",
             r"(?:情けない|ふがいない)", r"自分が(?:嫌|いや)になる", r"役に立てて(?:い)?ない",
@@ -828,7 +830,77 @@ SUBORDINATE_SIGNALS = [
 ]
 
 
-SELF_NEG_ALL = [p for sig in SUBORDINATE_SIGNALS for p in sig["patterns"]]
+# 褒めない・出来事として拾わない側は広いまま（迷ったら慎重に）。拾う側（上の patterns）だけを絞った
+SELF_NEG_ALL = [p for sig in SUBORDINATE_SIGNALS for p in sig["patterns"]] + [r"(?:どうせ|何をやっても|なにをやっても)"]
+
+# ---- 自己否定かどうかの見分け（発注書 v14）。言葉が当たっても、次の場合は慰めない ----
+FIRST_PERSON = r"(?:私|僕|自分|わたし|ぼく|俺)"
+CLAUSE_SEP = re.compile(r"[、。，．,.!！?？…\s]+")
+# 自分の価値・能力を決めつける言葉。責任の引き受け（「私のせい」）より重い
+STRONG_SELF_WORDS = re.compile(r"ダメ|だめ|無能|使えない|役に立た|役に立て|バカ|馬鹿|情けない|ふがいない|向いて|力不足|能力が|嫌|人間|どうせ.{0,12}?" + FIRST_PERSON)
+# 他の人の話（「彼は向いてない」「お客様が情けない」）
+THIRD_PERSON = re.compile(r"(?:彼|彼女|あの人|その人|お客様|お客さん|先方|相手|上司|部長|課長|先輩|同僚|後輩|みんな|皆|[^\s、。]{1,6}さん)(?:が|は|も|の)")
+# 打ち消し（「私のせいではありません」「悪くない」）と、人から言われた話（「使えないと言われました」）
+NEG_TAIL = re.compile(r"^(?:では|じゃ|でも)(?:ない|ありません)|^(?:わけ|訳)(?:では|じゃ)|^(?:とは|とも)(?:思わ|言え|限ら)")
+NEG_AFTER_KU = re.compile(r"^(?:ない|ありません|なかった)")
+REPORTED_TAIL = re.compile(r"(?:と|って)(?:言われ|怒られ|指摘され|思われ|叱られ|注意され)")
+# 責任を引き受けて次の行動まで言えている発言は、慰めずにそのまま聞く
+FORWARD_PLAN = re.compile(r"(?:次(?:は|から|回は|回から)|今後は|これからは|再発防止|気をつけ|見直し|確認(?:し|を)|直し|改善|やり直)[^、。]{0,12}?(?:ます|ていく|たいです|つもり)")
+APOLOGY = re.compile(r"すみません|すいません|申し訳|ごめんなさい")
+# 「明日までは無理です」は断り・調整であって、あきらめではない
+LIMIT_BEFORE = re.compile(r"まで|今日|明日|今週|来週|今月|その日|日程|期限|予算|人手|時間的に|物理的に")
+
+
+def _clause_bounds(text: str, pos: int) -> tuple[int, int]:
+    start, end = 0, len(text)
+    for m in CLAUSE_SEP.finditer(text):
+        if m.end() <= pos:
+            start = m.end()
+        elif m.start() > pos:
+            end = m.start()
+            break
+    return start, end
+
+
+def self_blame_hits(text: str) -> list[str]:
+    """自分を責める言葉のうち、慰める対象として数えるもの（当たった言葉のリスト）"""
+    out = []
+    for pat in SUBORDINATE_SIGNALS[0]["patterns"]:
+        for m in re.finditer(pat, text):
+            cs, ce = _clause_bounds(text, m.start())
+            ev, tail, clause = m.group(0), text[m.end():ce], text[cs:ce]
+            if NEG_TAIL.search(tail) or (ev.endswith("く") and NEG_AFTER_KU.search(tail)):
+                continue
+            if REPORTED_TAIL.search(tail):
+                continue
+            if not re.search(FIRST_PERSON, ev) and THIRD_PERSON.search(clause) and not re.search(FIRST_PERSON, clause):
+                continue
+            out.append(ev)
+            break
+    return out
+
+
+def judge_self_blame(text: str, recent_texts: list[str]) -> dict | None:
+    """自己否定として慰めるか。strength: strong（声でも話しかけてよい）/ normal（画面だけ）"""
+    evidence = self_blame_hits(text)
+    if not evidence:
+        return None
+    strong = any(STRONG_SELF_WORDS.search(e) for e in evidence)
+    if not strong and FORWARD_PLAN.search(text):
+        return None
+    # 責任の引き受けだけでは画面止まり。謝罪が重なる・直前にも出ていたときは、つらさが続いているとみて声も許す
+    if not strong and (APOLOGY.search(text) or any(self_blame_hits(t) for t in recent_texts[-2:])):
+        strong = True
+    return {"strength": "strong" if strong else "normal", "evidence": evidence}
+
+
+def give_up_hit(text: str) -> bool:
+    for pat in next(s for s in SUBORDINATE_SIGNALS if s["id"] == "give_up")["patterns"]:
+        for m in re.finditer(pat, text):
+            cs, _ = _clause_bounds(text, m.start())
+            if not LIMIT_BEFORE.search(text[cs:m.start()]):
+                return True
+    return False
 FILLER_CLAUSE = re.compile(r"^(?:はい|ええ|あの|えっと|その|いえ|でも|ただ|なので|それで|本当に|ほんとに|もう)$")
 SUB_CLAUSE_SPLIT = r"[、。，．,.!！?？…\s]+|けど|けれど|ので"
 
@@ -858,37 +930,105 @@ OBJECTIVE_QUESTIONS = [
 ]
 
 
-def self_rewrite(sig_id: str, text: str) -> dict:
-    """自己否定の発言を、自分を客観視する手がかりに変える（画面だけに出す）。
+# 部下の傾向に合わせたフォロー（発注書 v15）。傾向の言葉は口にも画面にも出さない。効果は未検証（これから検証）
+# self_blame：event=出来事が取れた時の文（{e}に出来事）／plain=取れない時の文／questions=問い／voice=声（40字以内・固定）
+SELF_BLAME_STYLE = {
+    "perfectionist": {  # 自責が全否定に向かいやすい → できていることも一緒に見る
+        "event": "「{e}」は起きたことで、あなたの価値とは別です。できているところも一緒に見てみましょう。",
+        "plain": "起きたことと、自分への評価は分けて大丈夫です。できているところも一緒に見てみましょう。",
+        "questions": ["それは起きた事実ですか？それとも、自分への評価ですか？",
+                      "同じことを同僚がしたら、何と声をかけますか？",
+                      "今回、できていたことは何ですか？"],
+        "voice": "十分やれているところもあります。起きたことと評価を分けて見ましょう。",
+    },
+    "logical": {  # 根拠・納得を求める → 評価の根拠を事実で確かめる
+        "event": "「{e}」は起きたことです。そこから「自分がだめ」と言える根拠があるか、事実で確かめてみましょう。",
+        "plain": "「自分がだめ」と言える根拠があるか、起きたことだけを並べて確かめてみましょう。",
+        "questions": ["その評価の根拠になる事実は、何ですか？",
+                      "事実だけを並べると、何が起きていましたか？",
+                      "この出来事で、変えられることはどこですか？"],
+        "voice": "その評価の根拠を、事実で確かめましょう。起きたことは何でしたか？",
+    },
+    "sensitive": {  # 空気に敏感で「見放された」と感じやすい → まず責めていないことを伝える
+        "event": "ここで責めてはいません。「{e}」は起きたことで、あなたの価値とは別です。",
+        "plain": "ここで責めてはいません。起きたことと、自分への評価は分けて大丈夫です。",
+        "questions": ["今、いちばん気になっているのは何ですか？",
+                      "それは起きた事実ですか？それとも、そう感じている気持ちですか？",
+                      "同じことを同僚がしたら、何と声をかけますか？"],
+        "voice": "私は責めていません。起きたことだけ、いっしょに整理しましょう。",
+    },
+    "independent": {  # 自分で決めたい → 次の一手を本人に選んでもらう
+        "event": "「{e}」は起きたことで、あなたの価値とは別です。次にどうするかは、あなたが決められます。",
+        "plain": "起きたことと、自分への評価は分けて大丈夫です。次にどうするかは、あなたが決められます。",
+        "questions": ["次に変えるなら、自分ならどうしますか？",
+                      "起きたことと評価、どちらから整理しますか？",
+                      "次の一手を自分で決めるとしたら、何ですか？"],
+        "voice": "次にどうするかは、あなたが決められます。まず起きたことを整理しましょう。",
+    },
+}
+DEFAULT_SELF_BLAME_STYLE = {
+    "event": "「{e}」は起きたことで、あなたの価値とは別です。事実と評価を分けて見てみましょう。",
+    "plain": "起きたことと、自分への評価は分けて大丈夫です。事実と評価を分けて見てみましょう。",
+    "questions": OBJECTIVE_QUESTIONS,
+    "voice": "自分を責めなくて大丈夫です。起きたことと、自分への評価を分けて見てみましょう。",
+}
+GIVE_UP_STYLE = {
+    "perfectionist": ("全部できていなくて大丈夫です。できている所まで、先に伝えてみませんか？", "「〇〇まではできています。△△で止まっています」"),
+    "logical": ("分からない所を、足りない情報や条件として切り分けてみませんか？", "「〇〇は分かっています。△△の情報があれば進められます」"),
+    "sensitive": ("聞いても大丈夫です。分からない所を一つだけ伝えてみませんか？", "「〇〇までは分かりました。△△だけ教えてもらえますか？」"),
+    "independent": ("どこから自分で進めたいか、決めて伝えてみませんか？", "「〇〇は自分で進めます。△△だけ相談させてください」"),
+}
+OVER_APOLOGY_STYLE = {
+    "perfectionist": ("何度も謝らなくて大丈夫です。できていることを一つ伝えてみませんか？", "「〇〇はできています。次は△△します」"),
+    "logical": ("謝るより、原因と次の対策を一つ伝えるほうが伝わります。", "「原因は〇〇です。次は△△します」"),
+    "sensitive": ("何度も謝らなくて大丈夫です。気になっていることを一つ聞いてみませんか？", "「〇〇が気になっています。教えてもらえますか？」"),
+    "independent": ("謝らなくて大丈夫です。次に自分で決めることを一つ伝えてみませんか？", "「次は〇〇を自分で進めます」"),
+}
+
+
+def self_blame_style(type_key: str | None) -> dict:
+    return SELF_BLAME_STYLE.get(type_key or "", DEFAULT_SELF_BLAME_STYLE)
+
+
+def self_rewrite(sig_id: str, text: str, evidence: list[str] | None = None, type_key: str | None = None) -> dict:
+    """自己否定の発言を、自分を客観視する手がかりに変える（画面だけに出す）。傾向があれば言い回しを合わせる。
     objective: 起きたこと / いま浮かんでいる評価の言葉 / 問い / 言い直しの例"""
     event = find_event_clause(text)
     judgement = ""
     if sig_id == "self_blame":
-        for pat in SUBORDINATE_SIGNALS[0]["patterns"]:
-            m = re.search(pat, text)
-            if m:
-                judgement = m.group(0)
-                break
-        question = pick(OBJECTIVE_QUESTIONS, text)
+        style = self_blame_style(type_key)
+        judgement = (evidence or self_blame_hits(text) or [""])[0]
+        question = pick(style["questions"], text)
         if event:
-            return {"rewrite": f"「{event}」は起きたことで、あなたの価値とは別です。事実と評価を分けて見てみましょう。",
+            return {"rewrite": style["event"].format(e=event),
                     "rewrite_example": f"「{event}。次は〇〇します」",
+                    "voice": style["voice"],
                     "objective": {"fact": event, "judgement": judgement, "question": question}}
-        return {"rewrite": "起きたことと、自分への評価は分けて大丈夫です。事実と評価を分けて見てみましょう。",
+        return {"rewrite": style["plain"],
                 "rewrite_example": "「〇〇が起きました。次は△△します」",
+                "voice": style["voice"],
                 "objective": {"fact": "", "judgement": judgement, "question": question}}
     if sig_id == "give_up":
-        return {"rewrite": "全部じゃなくて大丈夫です。分かっている所と、分からない所を分けて伝えてみませんか？",
-                "rewrite_example": "「〇〇までは分かっています。△△の所を教えてもらえますか？」"}
+        rw, ex = GIVE_UP_STYLE.get(type_key or "", ("全部じゃなくて大丈夫です。分かっている所と、分からない所を分けて伝えてみませんか？",
+                                                   "「〇〇までは分かっています。△△の所を教えてもらえますか？」"))
+        return {"rewrite": rw, "rewrite_example": ex}
     if sig_id == "over_apology":
-        return {"rewrite": "何度も謝らなくて大丈夫です。これからすることを一つ伝えてみませんか？",
-                "rewrite_example": "「ご指摘ありがとうございます。次は〇〇します」"}
+        rw, ex = OVER_APOLOGY_STYLE.get(type_key or "", ("何度も謝らなくて大丈夫です。これからすることを一つ伝えてみませんか？",
+                                                        "「ご指摘ありがとうございます。次は〇〇します」"))
+        return {"rewrite": rw, "rewrite_example": ex}
     return {"rewrite": "", "rewrite_example": ""}
 
 
 def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: str):
     for sig in SUBORDINATE_SIGNALS:
-        if not any(re.search(p, text) for p in sig["patterns"]):
+        extra = {}
+        if sig["id"] == "self_blame":
+            extra = judge_self_blame(text, recent_sub_texts)
+            if not extra:
+                continue
+        elif not any(re.search(p, text) for p in sig["patterns"]):
+            continue
+        elif sig["id"] == "give_up" and not give_up_hit(text):
             continue
         need = sig.get("repeat", 1)
         if need > 1:
@@ -902,7 +1042,8 @@ def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: 
             "hint": sig["hint"],
             "forecast": sig["forecast"].get(type_key, "様子を見たい場面です"),
             "reframe": sig.get("reframe", ""),
-            **self_rewrite(sig["id"], text),
+            **({"strength": extra["strength"]} if extra else {}),
+            **self_rewrite(sig["id"], text, extra.get("evidence") if extra else None, type_key),
         }
     return None
 

@@ -7,9 +7,10 @@
 
   const VP = typeof module !== "undefined" && module.exports ? require("./voiceprint.js") : root.VoicePrint;
 
+  const TUNE = { newSpeakerDist: 7, lowSeparation: 6, sureMapping: 1 };   // 検証用に動かせる値（アプリは触らない）
   const NEW_SPEAKER_DIST = 7;   // 1人目の声の平均からこれ以上離れたら、2人目の候補にする
   const MIN_FRAMES = 10;        // これ未満の短い発言（「はい」など）は、2人目の根拠にしない
-  const LOW_SEPARATION = 4;     // 2人の声の平均がこれより近いと、見分けられないとみなす
+  const LOW_SEPARATION = 6;     // 2人の声の平均がこれより近いと、見分けられないとみなす（雑音下でも自信を持って間違えないよう、36ペアの会話で実測して決めた）
   const SURE_MAPPING = 1;       // 上司・部下の割り当ての確かさ。これ未満は「?」
   const ANCHOR_WEIGHT = 3;      // 名札の修正1件の重み
   const KEIGO_WEIGHT = 2;       // 敬語の割合の差 × 少ない方の発言数 にかける重み
@@ -22,20 +23,27 @@
   function merge(prints) {
     const ltas = new Array(VP.BANDS).fill(0);
     let n = 0, nVoiced = 0, st = 0;
+    const withCep = prints.length && prints.every((p) => p.cep);
+    const cep = withCep ? new Array(prints[0].cep.length).fill(0) : null;
+    let nCep = 0;
     prints.forEach((p) => {
       for (let b = 0; b < VP.BANDS; b++) ltas[b] += p.ltas[b] * p.n;
       n += p.n;
       if (p.nVoiced >= 3) { st += p.st * p.nVoiced; nVoiced += p.nVoiced; }
+      if (withCep) { const w = p.nCep || p.n; for (let k = 0; k < cep.length; k++) cep[k] += p.cep[k] * w; nCep += w; }
     });
     if (!n) return null;
     for (let b = 0; b < VP.BANDS; b++) ltas[b] /= n;
-    return { ltas, n, nVoiced, st: nVoiced ? st / nVoiced : 0, spread: 0 };
+    const out = { ltas, n, nVoiced, st: nVoiced ? st / nVoiced : 0, spread: 0 };
+    if (withCep && nCep) { out.cep = cep.map((x) => x / nCep); out.nCep = nCep; }
+    return out;
   }
 
   function create() {
     const utts = [];        // { print, keigo, label }
     let assign = [];        // 発言ごとのグループ（0 / 1）
     let cents = [null, null];
+    let metric = null;      // グループ内の揺れから学んだ距離の尺度（VoicePrint.learnMetric）
     let twoFound = false;
     let seed = null;        // 名札の修正で2人目の起点になった発言（取り消された時に元に戻すため）
 
@@ -65,25 +73,28 @@
 
     function kmeans(init) {
       const a = init.slice();
-      let cs = [null, null];
+      let cs = [null, null], mt = null;
+      const adaptive = VP.TUNE.adaptive;
       for (let it = 0; it < 10; it++) {
         cs = [0, 1].map((k) => merge(members(a, k)));
-        if (!cs[0] || !cs[1]) return { a, cs, cost: Infinity };
+        if (!cs[0] || !cs[1]) return { a, cs, cost: Infinity, mt };
+        mt = adaptive ? VP.learnMetric([members(a, 0), members(a, 1)]) : null;
         let changed = false;
         usable().forEach((i) => {
           if (utts[i].forced != null) {
             if (a[i] !== utts[i].forced) { a[i] = utts[i].forced; changed = true; }
             return;
           }
-          const k = VP.distance(utts[i].print, cs[0]) <= VP.distance(utts[i].print, cs[1]) ? 0 : 1;
+          const k = VP.distance(utts[i].print, cs[0], mt) <= VP.distance(utts[i].print, cs[1], mt) ? 0 : 1;
           if (k !== a[i]) { a[i] = k; changed = true; }
         });
         if (!changed) break;
       }
       cs = [0, 1].map((k) => merge(members(a, k)));
-      if (!cs[0] || !cs[1]) return { a, cs, cost: Infinity };
-      const cost = usable().reduce((s, i) => s + VP.distance(utts[i].print, cs[a[i]]), 0);
-      return { a, cs, cost };
+      if (!cs[0] || !cs[1]) return { a, cs, cost: Infinity, mt };
+      mt = adaptive ? VP.learnMetric([members(a, 0), members(a, 1)]) : null;
+      const cost = usable().reduce((s, i) => s + VP.distance(utts[i].print, cs[a[i]], mt), 0) + VP.metricPenalty(mt, usable().length);
+      return { a, cs, cost, mt };
     }
 
     // 一番離れた2つの発言を起点に分け直す（最初の分け方が悪かった時の立て直し）
@@ -115,6 +126,7 @@
     function refit() {
       if (!twoFound) {
         cents = [merge(members(assign, 0)), null];
+        metric = null;
         return;
       }
       applyLabels(assign);
@@ -128,10 +140,11 @@
       if (same * 2 < usable().length) best = { a: best.a.map((k) => (k == null ? k : 1 - k)), cs: [best.cs[1], best.cs[0]] };
       assign = best.a;
       cents = best.cs;
+      metric = best.mt || null;
     }
 
     function separation() {
-      return twoFound && cents[0] && cents[1] ? VP.distance(cents[0], cents[1]) : 0;
+      return twoFound && cents[0] && cents[1] ? VP.distance(cents[0], cents[1], metric) : 0;
     }
 
     function verdict(i) {
@@ -141,10 +154,10 @@
       const role = roleOfGroup(assign[i], score);
       if (u.label) return { role: u.label, sure: true, confidence: 1, group: assign[i] };
       if (!twoFound) return { role, sure: false, confidence: null, group: assign[i] };
-      const r = VP.classify(u.print, { 0: cents[0], 1: cents[1] });
+      const r = VP.classify(u.print, { 0: cents[0], 1: cents[1] }, metric);
       const confidence = r ? (String(assign[i]) === r.speaker ? r.confidence : 1 - r.confidence) : 0;
-      const sure = confidence >= VP.LOW_CONFIDENCE && Math.abs(score) >= SURE_MAPPING
-        && separation() >= LOW_SEPARATION && u.print.n >= MIN_FRAMES / 2;
+      const sure = confidence >= VP.LOW_CONFIDENCE && Math.abs(score) >= TUNE.sureMapping
+        && separation() >= TUNE.lowSeparation && u.print.n >= MIN_FRAMES / 2;
       return { role, sure, confidence, group: assign[i] };
     }
 
@@ -171,14 +184,14 @@
           assign[index] = 0;
         } else if (!twoFound) {
           const d = VP.distance(print, cents[0]);
-          if (d > NEW_SPEAKER_DIST && print.n >= MIN_FRAMES) {
+          if (d > TUNE.newSpeakerDist && print.n >= MIN_FRAMES) {
             twoFound = true;
             assign[index] = 1;
           } else {
             assign[index] = 0;
           }
         } else {
-          assign[index] = VP.distance(print, cents[0]) <= VP.distance(print, cents[1]) ? 0 : 1;
+          assign[index] = VP.distance(print, cents[0], metric) <= VP.distance(print, cents[1], metric) ? 0 : 1;
         }
         refit();
         return Object.assign({ index }, verdict(index), { changed: diff(before) });
@@ -210,11 +223,11 @@
 
       // 話している最中の推定（ステージで光らせる用）
       live(print) {
-        if (!print || !twoFound || separation() < LOW_SEPARATION) return null;
-        const r = VP.classify(print, { 0: cents[0], 1: cents[1] });
+        if (!print || !twoFound || separation() < TUNE.lowSeparation) return null;
+        const r = VP.classify(print, { 0: cents[0], 1: cents[1] }, metric);
         if (!r || r.confidence < VP.LOW_CONFIDENCE) return null;
         const score = mappingScore(assign);
-        if (Math.abs(score) < SURE_MAPPING) return null;
+        if (Math.abs(score) < TUNE.sureMapping) return null;
         return roleOfGroup(Number(r.speaker), score);
       },
 
@@ -225,7 +238,7 @@
           twoFound,
           separation: Math.round(separation() * 10) / 10,
           mapping: Math.round(mappingScore(assign) * 10) / 10,
-          hard: (!twoFound && n >= HARD_AFTER) || (twoFound && n >= HARD_AFTER && separation() < LOW_SEPARATION),
+          hard: (!twoFound && n >= HARD_AFTER) || (twoFound && n >= HARD_AFTER && separation() < TUNE.lowSeparation),
         };
       },
     };
@@ -242,7 +255,7 @@
     };
   }
 
-  const api = { create, bySource, merge, KEIGO, NEW_SPEAKER_DIST, LOW_SEPARATION };
+  const api = { create, bySource, merge, KEIGO, NEW_SPEAKER_DIST, LOW_SEPARATION, TUNE };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Diarize = api;
 })(typeof window !== "undefined" ? window : globalThis);

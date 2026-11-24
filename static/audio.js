@@ -17,7 +17,7 @@ const Mic = (() => {
   // 自動音量調整を切る：オンだとChromeがPC全体のマイク音量を書き換え、会議アプリの声まで小さくなる
   const CONSTRAINTS = { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
   const REMOTE_HOLD_MS = 250;   // 会議の音が止んでからこの間は、マイク側を自分の声として数えない（スピーカーの回り込み対策）
-  let ctx = null, stream = null, analyser = null, timer = null, buf = null, vad = null, localGain = null, localSrc = null;
+  let ctx = null, stream = null, analyser = null, timer = null, buf = null, vad = null, noise = null, localGain = null, localSrc = null;
   let remote = null;            // { stream, src, analyser, buf, vad, dest, lastSpeech, level }
   let muted = false, muteUntil = 0, level = 0;
   let remoteSuppressed = false, suppressUntil = 0; // view view用PCの声が会議の音として戻ってくる間
@@ -37,6 +37,7 @@ const Mic = (() => {
     localSrc.connect(analyser);
     buf = new Float32Array(analyser.fftSize);
     vad = VoicePrint.createVad();
+    noise = VoicePrint.createNoiseModel();   // 部屋の雑音の見積もり。毎フレーム更新し、声の特徴を取るときに差し引く／雑音適応に使う
     timer = setInterval(tick, 40);
   }
 
@@ -68,9 +69,10 @@ const Mic = (() => {
     const remoteRecent = remote && now - remote.lastSpeech < REMOTE_HOLD_MS;
     const speech = !ignored && vad(rms) && !remoteRecent; // view viewの声で雑音レベルの学習が狂わないようにする
     level = level * 0.55 + Math.min(1, rms * 14) * 0.45;
+    if (!ignored) noise.update(buf);   // view viewの声が鳴っている間は、雑音の見積もりに入れない
     if (speech) {
-      const f = VoicePrint.frameFeatures(buf, ctx.sampleRate);
-      frames.push({ t: now, f0: f.f0, clarity: f.clarity, bands: f.bands });
+      const f = VoicePrint.frameFeatures(buf, ctx.sampleRate, noise);
+      frames.push({ t: now, f0: f.f0, clarity: f.clarity, bands: f.bands, cep: f.cep, mel: f.mel, nmel: f.nmel });
     }
     while (frames.length && now - frames[0].t > 30000) frames.shift();
     while (remoteTimes.length && now - remoteTimes[0] > 30000) remoteTimes.shift();
