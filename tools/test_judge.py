@@ -378,7 +378,9 @@ for t in ["なんで気づけなかったんだろう", "もっとちゃんと�
     r = any_say(t)
     check(f"自分に向けた言葉を、上司の厳しい言葉と取り違えない：{t}", not r["should_intervene"])
 for t in ["上司に使えないと言われました", "全然できてないじゃんって言われて落ち込んでいます"]:
-    check(f"人から言われた厳しい言葉を引きずっている時は、受け取り方の声かけが出る：{t}", any_say(t)["should_intervene"])
+    r = any_say(t)
+    check(f"人から言われた厳しい言葉を引きずっている時は、受け取り方の声かけか、つらさの受け止めが出る：{t}",
+          r["should_intervene"] or (r["subordinate_signal"] and r["subordinate_signal"]["id"] in ("distress", "self_blame")))
 for t in ["この案はダメだと思います", "データがまだ足りてないと思います", "明日までは無理です"]:
     r = any_say(t)
     check(f"仕事の話は、自己否定にも厳しい言葉にもしない：{t}", not r["subordinate_signal"] and not r["should_intervene"])
@@ -394,6 +396,50 @@ saved_any = str(main.log_for_disk(dict(main.session_log, started_at="x", receive
 check("既定のログには、分けない発言の本文が入らない", "全然できてないと自分でも思います" not in saved_any)
 main.session_log["started_at"] = None
 main.load_config = _orig_load_config
+
+# ---- 発注書 v18：反応する言葉の幅（面談にありそうな言葉のコーパス。tools/phrase_corpus.py） ----
+print("\n反応する言葉の幅（v18）")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import phrase_corpus as corpus  # noqa: E402
+
+_orig_load_config18 = main.load_config
+main.load_config = lambda: {**_orig_load_config18(), "sensitivity": "medium", "judge": {"use_claude": False}}
+
+
+def reacts(t):
+    tc.post("/start-session")   # 直前の発言の影響（謝罪が続いている等）を受けないよう、毎回はじめから
+    r = any_say(t)
+    sg = r.get("subordinate_signal")
+    return ("harsh" if r["should_intervene"] else None) or (sg["id"] if sg else None)
+
+
+def coverage(name, items, ok_kinds):
+    miss = [t for t in items if reacts(t) not in ok_kinds]
+    check(f"{name}：コーパス{len(items)}文のうち、反応しない文が0（反応できた {len(items) - len(miss)}/{len(items)}）" + (f" 取りこぼし:{miss[:3]}" if miss else ""), not miss)
+
+
+coverage("厳しい言葉（上司）", corpus.HARSH, ("harsh",))
+coverage("自分を責める言葉（部下）", corpus.SELF, ("self_blame",))
+coverage("あきらめ・手が止まっている", corpus.GIVEUP, ("give_up",))
+coverage("人と比べて自分を低く見る", corpus.COMPARE, ("comparison", "self_blame"))
+coverage("つらさ・しんどさ", corpus.DISTRESS, ("distress",))
+fp = [t for t in corpus.NEUTRAL if reacts(t)]
+check(f"何もしないべき言葉：コーパス{len(corpus.NEUTRAL)}文のうち、誤反応が0" + (f" 誤反応:{fp[:3]}" if fp else ""), not fp)
+gap_counts = {k: len(v) for k, v in corpus.GAPS.items()}
+print(f"  情報 未対応の文（まだ反応できない。パターンを足したら本体に移す）：{gap_counts}／合計 {sum(gap_counts.values())}文")
+check("未対応のリストの文は、本当にまだ反応しない（反応するようになったら、本体に移す）", all(reacts(t) is None for v in corpus.GAPS.values() for t in v))
+check("反応の種類（サインの種類）が5つある：自己否定・あきらめ・謝罪の連続・人と比べる・つらさ", {x["id"] for x in main.SUBORDINATE_SIGNALS} == {"self_blame", "give_up", "over_apology", "comparison", "distress"})
+check("すべてのサインに、画面の見出しと、傾向4つぶんの予報と言い直しがある",
+      all(x.get("title") and set(x["forecast"]) == set(main.TYPE_KEYS) for x in main.SUBORDINATE_SIGNALS)
+      and all(set(d) == set(main.TYPE_KEYS) for d in (main.COMPARISON_STYLE, main.DISTRESS_STYLE, main.GIVE_UP_STYLE, main.OVER_APOLOGY_STYLE)))
+texts18 = [t for d in (main.COMPARISON_STYLE, main.DISTRESS_STYLE) for v in d.values() for t in v]
+check("新しい言い直しにも、傾向の名前や「タイプ」を出さない", not any(lb in t for t in texts18 for lb in labels_v15) and not any("タイプ" in t for t in texts18))
+for k in main.TYPE_KEYS:
+    sc = main.detect_subordinate_signal("同期はみんなできるのに、私だけできていません", [], k)
+    sd = main.detect_subordinate_signal("正直、しんどいです", [], k)
+    check(f"{k}：「人と比べる」「つらさ」に、傾向別の言い直しが出て、声は出さない（strengthなし）",
+          sc and sd and sc["rewrite"] == main.COMPARISON_STYLE[k][0] and sd["rewrite"] == main.DISTRESS_STYLE[k][0] and "strength" not in sc and "strength" not in sd)
+main.load_config = _orig_load_config18
 
 print("\n失敗 0" if not failed else f"\n失敗 {failed}")
 sys.exit(1 if failed else 0)

@@ -1176,10 +1176,11 @@ function showReceiveTip(sig) {
   }
   state.receiveTipAt[sig.id] = now;
   const result = { cushion_phrase: "", reframed_speech: text, reply_example: sig.rewrite_example || "", reply_label: "言い直しの例", objective: sig.objective || null };
-  showSpeechBubble(result, "自分を責めなくて大丈夫");
+  const title = sig.title || "自分を責めなくて大丈夫";
+  showSpeechBubble(result, title);
   addMofuLine(`${text}（画面で）`);
   const ob = sig.objective;
-  stageShow({ intent: "自分を責めなくて大丈夫", text: ob ? `${text} ${ob.question}` : text, tip: sig.rewrite_example ? `言い直しの例：${sig.rewrite_example}` : "" });
+  stageShow({ intent: title, text: ob ? `${text} ${ob.question}` : text, tip: sig.rewrite_example ? `言い直しの例：${sig.rewrite_example}` : "" });
   if (state.receive) state.receive.rewrites++;
 }
 
