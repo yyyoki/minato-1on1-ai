@@ -310,13 +310,13 @@ test("控えめ：同じカテゴリは1回まで", () => {
   const r = run(twoInterventions(320000, "accusatory_why"), { pace: "gentle", playAfter: 50 });
   ok(r.has("hint", (a) => a.why === "category"), "同カテゴリを止めていない");
 });
-test("ふつう：30分で5回まで", () => {
+test("ふつう：開始直後でも話し、回数の上限はない（発注書v24）", () => {
   const s = script();
   const at = (t, id) => s.say(t, t + 2000).final(t + 2300, id).verdict(t + 2350, id).quiet(t + 2000, t + 5000).add(t + 4500, "playEnd", { speakId: id });
   for (let i = 0; i < 6; i++) at(60000 + i * 120000, i + 1);
   const r = run(s, { pace: "normal", playAfter: 50 });
-  ok(r.actions.filter((a) => a.type === "speak").length === 5, "上限を守っていない");
-  ok(r.has("hint", (a) => a.why === "budget"), "budget になっていない");
+  ok(r.actions.filter((a) => a.type === "speak").length === 6, "回数の上限で控えている");
+  ok(!r.has("hint", (a) => a.why === "budget" || a.why === "warmup" || a.why === "category"), "控える理由が残っている");
 });
 test("「不要」が続いたら以後は声を出さない", () => {
   const r = run(script().add(0, "mode", { voiceOff: true }).say(0, 2000).final(2300, 1).verdict(2350, 1).quiet(2000, 5000));

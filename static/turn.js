@@ -33,7 +33,7 @@
   // 声で話す回数の上限。いずれも仮説で、「助かった／不要」の記録で見直す
   const PACES = {
     gentle: { label: "控えめ", maxVoices: 3, windowMs: 30 * 60000, minGapMs: 5 * 60000, warmupMs: 3 * 60000, oncePerCategory: true },
-    normal: { label: "ふつう", maxVoices: 5, windowMs: 30 * 60000, minGapMs: 90000, warmupMs: 30000, oncePerCategory: false },
+    normal: { label: "ふつう", maxVoices: 0, windowMs: 0, minGapMs: 15000, warmupMs: 0, oncePerCategory: false },   // 発注書v24：控えない。開始直後も、回数の上限もなし。前の声の直後（15秒）だけ重ならないようにする
     check: { label: "確認用", maxVoices: 0, windowMs: 0, minGapMs: 8000, warmupMs: 0, oncePerCategory: false },
   };
 

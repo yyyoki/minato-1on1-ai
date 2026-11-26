@@ -1185,10 +1185,9 @@ async function runSpeculation(text) {
   }
 }
 
-function showBossHint(title, result) {
-  const parts = [result.boss_tip];
-  if (showProfile() && result.meta_note) parts.push(result.meta_note);
-  showHint("boss", title, parts.filter(Boolean).join(" "), showProfile() && result.reason ? "判定：" + result.reason : "");
+// 発注書v24：この画面は部下本人のもの。上司向けのヒント（言い方の提案など）は出さない
+function showBossHint() {
+  $("hintCard").hidden = true;
 }
 
 // 部下が自分を責める言葉を言った時：声では割り込まず、view viewの画面に「行動と次の一手での言い直し」を出す
@@ -1265,27 +1264,15 @@ function renderGoals() {
   $("goalsTake").textContent = takeaway ? `部下に持ち帰ってほしいこと：${takeaway}（view viewの吹き出しに添えます）` : "";
 }
 
-// 声を出さなかった回：言うつもりだった一言と提案を画面に残す
+// 声を出さなかった回（発注書v24）：「控えました」とは言わず、同じ一言を画面にそのまま出す。
+// この画面は部下本人のもので、上司は見ていない前提。上司向けヒントは出さない
 function holdToScreen(v, why) {
-  if (why === "voice_off") {
-    // 声オフ：控えたのではなく、画面で伝えたこととして扱う
-    v.iv.outcome = "screen";
-    v.iv.holdReason = why;
-    showSpeechBubble(v.result);
-    addMofuLine(`${spokenText(v.result)}（画面で）`);
-    showBossHint("💡 上司向けヒント", v.result);
-    stageShow(bubbleFor(v.result));
-    people.boss.setMood("listening");
-    updateCounts();
-    return;
-  }
-  v.iv.outcome = why === "moved_on" || why === "stale" || why === "before_play" ? "yielded" : "screen";
+  v.iv.outcome = why === "voice_off" ? "screen" : why === "moved_on" || why === "stale" || why === "before_play" ? "yielded" : "screen";
   v.iv.holdReason = why;
-  const reason = HOLD_REASON[why] || "";
-  showHint("boss", `💡 今は控えました${reason ? "（" + reason + "）" : ""}`,
-    [`言うつもりだった一言：「${v.result.reframed_speech || ""}」`, v.result.boss_tip].filter(Boolean).join(" "),
-    showProfile() && v.result.reason ? "判定：" + v.result.reason : "");
-  flashStatus("今は控えました");
+  showSpeechBubble(v.result);
+  addMofuLine(`${spokenText(v.result)}（画面で）`);
+  stageShow(bubbleFor(v.result));
+  people.boss.setMood("listening");
   updateCounts();
 }
 
@@ -1303,7 +1290,7 @@ function bubbleFor(result) {
   return {
     cushion: result.cushion_phrase || "",
     text: result.reframed_speech || "",
-    tip: [reply, state.stageTip ? result.boss_tip || "" : ""].filter(Boolean).join("　"),
+    tip: reply,   // 発注書v24：部下本人の画面。上司向けの提案（boss_tip）は出さない
     intent: skillLine(result) || intentLine(),
   };
 }
@@ -2251,7 +2238,6 @@ function renderSummary() {
       const mofu = el("p", "iv-mofu", it.speech);
       mofu.dataset.name = charName() + "：";
       li.appendChild(mofu);
-      if (it.tip) li.appendChild(el("p", "iv-meta", "💡 " + it.tip));
       if (showProfile() && it.meta) li.appendChild(el("p", "iv-meta", it.meta));
     }
     list.appendChild(li);
