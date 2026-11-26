@@ -251,7 +251,10 @@ def save_config(data: dict):
 
 
 def tendency_text(config: dict) -> str:
-    scores = (config.get("profile_analysis") or {}).get("scores") or {}
+    pa = config.get("profile_analysis") or {}
+    if pa.get("kind") == "scs":   # 数値は渡さず、目安の言葉だけ
+        return f"つらいときの自分への接し方：{pa['scs']['level_label']}"
+    scores = pa.get("scores") or {}
     parts = [f"{DIM_LABELS[k]} {scores[k]}" for k in TYPE_KEYS if isinstance(scores.get(k), (int, float))]
     return " / ".join(parts) if parts else "（未分析）"
 
@@ -852,33 +855,89 @@ CATEGORY_EXAMPLES = {
     "sigh_tone": "「はぁ…もういいよ」",
 }
 
-# 4つの傾向を6問ずつ（うち1問は逆の聞き方）。上司が答える文（boss）と、部下本人が答える文（self）
-PROFILE_QUESTIONS = [
-    {"id": "q1", "dim": "perfectionist", "boss": "ミスをすると、必要以上に自分を責めているように見える", "self": "ミスをすると、必要以上に自分を責めてしまう", "reverse": False},
-    {"id": "q2", "dim": "logical", "boss": "指示を受けると「なぜそうするのか」理由や根拠を確認したがる", "self": "指示を受けると、理由や根拠を確認したくなる", "reverse": False},
-    {"id": "q3", "dim": "sensitive", "boss": "こちらの声のトーンや表情の変化に敏感に反応する", "self": "相手の声のトーンや表情の変化が気になる", "reverse": False},
-    {"id": "q4", "dim": "independent", "boss": "細かく指示されると、やる気が下がっているように見える", "self": "細かく指示されると、やる気が下がる", "reverse": False},
-    {"id": "q5", "dim": "perfectionist", "boss": "仕事の完成度にこだわり、なかなか「できました」と言わない", "self": "完成度が気になって、なかなか「できました」と言えない", "reverse": False},
-    {"id": "q6", "dim": "logical", "boss": "気持ちに訴えるより、事実やデータで話すと納得しやすい", "self": "気持ちより、事実やデータで話してもらうほうが納得できる", "reverse": False},
-    {"id": "q7", "dim": "sensitive", "boss": "強めに指摘されると、黙り込んだり固まったりする", "self": "強めに指摘されると、頭が真っ白になったり固まったりする", "reverse": False},
-    {"id": "q8", "dim": "independent", "boss": "やり方を任されると、生き生きと動く", "self": "やり方を任されると、力を発揮しやすい", "reverse": False},
-    {"id": "q9", "dim": "perfectionist", "boss": "指摘を受けると「自分はダメだ」と受け止めているように見える", "self": "指摘を受けると「自分はダメだ」と感じやすい", "reverse": False},
-    {"id": "q10", "dim": "logical", "boss": "曖昧な指示だと、動き出しが遅くなったり質問が増えたりする", "self": "曖昧な指示だと、動き出す前に確認したくなる", "reverse": False},
-    {"id": "q11", "dim": "sensitive", "boss": "ため息や沈黙を「怒っている」と受け取りやすい", "self": "相手のため息や沈黙を「怒っている」と感じやすい", "reverse": False},
-    {"id": "q12", "dim": "independent", "boss": "進め方に口を出されると、「信頼されていない」と受け取っているように見える", "self": "進め方に口を出されると、「信頼されていない」と感じる", "reverse": False},
-    {"id": "q13", "dim": "perfectionist", "boss": "困っていても、自分で何とかしようとして相談が遅れがち", "self": "困っても、自分で何とかしようとして相談が遅れがち", "reverse": False},
-    {"id": "q14", "dim": "logical", "boss": "納得できない指摘には、言い返したり黙り込んだりする", "self": "納得できない指摘には、反論したくなったり黙ってしまったりする", "reverse": False},
-    {"id": "q15", "dim": "sensitive", "boss": "謝罪の言葉が多い", "self": "つい謝ってしまうことが多い", "reverse": False},
-    {"id": "q16", "dim": "independent", "boss": "自分の考えたやり方を、なかなか変えようとしない", "self": "自分の考えたやり方を、なかなか変えたくない", "reverse": False},
-    {"id": "q17", "dim": "perfectionist", "boss": "褒められても「まだまだです」と素直に受け取らないことが多い", "self": "褒められても素直に受け取れないことが多い", "reverse": False},
-    {"id": "q18", "dim": "logical", "boss": "「普通は」「常識的に」と言われると、引っかかっているように見える", "self": "「普通は」「常識的に」と言われると引っかかる", "reverse": False},
-    {"id": "q19", "dim": "sensitive", "boss": "面談の後も、言われたことを長く引きずっているように見える", "self": "言われたことを、あとまで長く引きずってしまう", "reverse": False},
-    {"id": "q20", "dim": "independent", "boss": "自分で決めたことは、最後までやり切ろうとする", "self": "自分で決めたことは、最後までやり切りたい", "reverse": False},
-    {"id": "q21", "dim": "perfectionist", "boss": "失敗しても、すぐに気持ちを切り替えて次に進めている", "self": "失敗しても、すぐに気持ちを切り替えられる", "reverse": True},
-    {"id": "q22", "dim": "logical", "boss": "理由を聞かずに、言われたとおりに進めることが多い", "self": "理由を聞かずに、言われたとおりに進めることが多い", "reverse": True},
-    {"id": "q23", "dim": "sensitive", "boss": "厳しい言い方をされても、落ち着いて話を続けられる", "self": "厳しい言い方をされても、落ち着いて話を続けられる", "reverse": True},
-    {"id": "q24", "dim": "independent", "boss": "細かく確認してもらえるほうが、安心して進められるように見える", "self": "細かく確認してもらえるほうが、安心して進められる", "reverse": True},
+# ---- 傾向のチェック：セルフ・コンパッション尺度 日本語版（SCS-J）26項目 ----
+# 原版：Neff (2003) Self and Identity, 2, 223-250。原作者は、引用を条件にあらゆる目的での使用を許諾している
+# 日本語版：有光興記 (2014) 心理学研究, 85(1), 50-59（原著者の許可を得て邦訳・逆翻訳）。項目は論文の表1から機械的に取り出した
+# 回答は 1（ほとんど全く、そうしない）〜 5（ほとんどいつも、そうする）。下位尺度の項目番号と逆転は、原作者の採点表どおり
+SCS_ITEMS = {
+    1: "自分自身の欠点や不十分なところについて，不満に思っているし，批判的である。",
+    2: "気分が落ち込んだときには，間違ったことすべてについて，くよくよと心配し，こだわる傾向にある。",
+    3: "自分にとって物事が悪い方向に向かっているとき，そうした困難は誰もが経験するような人生の一場面に過ぎないと考える。",
+    4: "自分の不十分なところについて考えると，自分以外の世界から切り離され，排除されたような気分になりがちである。",
+    5: "感情的な苦痛を感じているとき，自分自身にやさしくする。",
+    6: "自分にとって重要なことを失敗したとき，無力感で頭がいっぱいになる。",
+    7: "気分がどん底のときには，自分と同じような気持ちになっている人が世界には大勢いるということを思い出すようにする。",
+    8: "本当につらいとき，自分自身に批判的になる傾向がある。",
+    9: "何かで苦しい思いをしたときには，感情を適度なバランスに保つようにする。",
+    10: "自分自身にどこか不十分なところがあると感じると，多くの人も不十分であるという気持ちを共有していることを思い出すようにする。",
+    11: "自分のパーソナリティの好きでないところについては，やさしくなれないし，いらだちを感じる。",
+    12: "苦労を経験しているとき，必要とする程度に自分自身をいたわり，やさしくする。",
+    13: "気分が落ち込んだとき，多くの人がおそらく自分より幸せであるという気持ちになりがちである。",
+    14: "何か苦痛を感じることが起こったとき，その状況についてバランスのとれた見方をするようにする。",
+    15: "自分の失敗は，人間のありようの一つであると考えるようにしている。",
+    16: "自分自身について自分が好きでない点について考えたとき，自分自身を批判的に考えてしまう。",
+    17: "自分にとって大切なことを失敗したときは，偏りがないように物事をとらえるようにする。",
+    18: "自分が悪戦苦闘しているときに，他の人はもっと楽をしているに違いないという気持ちになりやすい。",
+    19: "苦しみを経験しているとき，自分自身にやさしくする。",
+    20: "何かで苦痛を感じているとき，感情で頭がいっぱいになってしまう。",
+    21: "自分が苦しんでいるとき，自分自身に少し冷たい気持ちになることがある。",
+    22: "気分が落ち込んでいるとき，自分の感情に関心を持ち，心を開いて対処しようとする。",
+    23: "自分自身の欠点と不十分なところについては，やさしい目で見るようにしている。",
+    24: "何か苦痛を感じることが起こったとき，その出来事を大げさに考える傾向がある。",
+    25: "自分にとって大切な何かに失敗したとき，自分の失敗の中でひとりぼっちでいるように感じる傾向がある。",
+    26: "自分のパーソナリティの好きでないところについては理解し，やさしい目で見るようにしている。",
+}
+SCS_SUBSCALES = {  # キー: (名前, 項目番号, 逆転して採点するか)
+    "self_kindness": ("自分へのやさしさ", [5, 12, 19, 23, 26], False),
+    "self_judgment": ("自己批判", [1, 8, 11, 16, 21], True),
+    "common_humanity": ("共通の人間性", [3, 7, 10, 15], False),
+    "isolation": ("孤独感", [4, 13, 18, 25], True),
+    "mindfulness": ("マインドフルネス", [9, 14, 17, 22], False),
+    "over_identification": ("過剰同一化", [2, 6, 20, 24], True),
+}
+# 原作者の資料にある目安（臨床上の基準値ではない）：1.0〜2.49＝低め、2.5〜3.5＝中ほど、3.51〜5.0＝高め
+SCS_LEVELS = {
+    "low": {
+        "label": "自分に厳しくなりやすい",
+        "body": [
+            "つらいときや失敗したときに、自分を批判したり、苦しい気持ちに飲み込まれたりしやすい傾向があります（セルフ・コンパッション尺度の得点が低め）。",
+            "この得点が低い人は、否定的な出来事やフィードバックのあとの否定的な感情が強く出やすいことと関連すると報告されています（Leary ほか 2007）。",
+            "日本の大学生を対象にした調査では、この得点は特性不安・抑うつと負の関連がありました（有光 2014）。同時に測った結果なので、原因と結果までは分かっていません。",
+        ],
+        "sensitivity": "high",
+    },
+    "moderate": {
+        "label": "中ほど",
+        "body": [
+            "つらいときの、自分へのやさしさと厳しさが、中ほどにある傾向です（セルフ・コンパッション尺度の得点が中ほど）。",
+            "この得点が高いほど、否定的な出来事やフィードバックのあとの否定的な感情が小さいことと関連すると報告されています（Leary ほか 2007）。",
+            "日本の大学生を対象にした調査では、この得点は特性不安・抑うつと負の関連がありました（有光 2014）。同時に測った結果なので、原因と結果までは分かっていません。",
+        ],
+        "sensitivity": "medium",
+    },
+    "high": {
+        "label": "自分にやさしく接しやすい",
+        "body": [
+            "つらいときや失敗したときに、自分を責めすぎず、バランスよく受け止めやすい傾向があります（セルフ・コンパッション尺度の得点が高め）。",
+            "この得点が高い人は、否定的な出来事やフィードバックのあとの否定的な感情が小さいことと関連すると報告されています（Leary ほか 2007）。",
+            "日本の大学生を対象にした調査でも、この得点は特性不安・抑うつと負の関連がありました（有光 2014）。同時に測った結果なので、原因と結果までは分かっていません。",
+        ],
+        "sensitivity": "low",
+    },
+}
+SCS_NOTES = [
+    "研究が示すのは、集団での傾向です。あなた個人の反応を予測するものではなく、診断でもありません。",
+    "この自己チェックが見ているのは、つらいときに自分をどう扱うか（自己批判や、苦しい気持ちへの飲み込まれやすさ）です。他人の言葉を否定と受け取りやすいか、言われたことを反芻して悪い予測をしやすいかは、測っていません。",
+    "得点の区切りは、原作者の資料にある目安です（1.0〜2.49＝低め、2.5〜3.5＝中ほど、3.51〜5.0＝高め）。臨床上の基準値ではなく、他の人と比べるためのものでもありません。",
+    "日本語版の検証は、大学生の調査（366人）で行われました。職場の1on1での有効性は、確かめていません。",
+    "view viewの「声かけの積極さ」のおすすめは、この得点を目安にした設計上の判断です。効果はこれから検証します。",
 ]
+SCS_SOURCES = [
+    {"label": "Neff (2003). Development and validation of a scale to measure self-compassion. Self and Identity, 2, 223-250.", "url": ""},
+    {"label": "有光興記 (2014). セルフ・コンパッション尺度日本語版の作成と信頼性，妥当性の検討. 心理学研究, 85(1), 50-59.", "url": "https://www.jstage.jst.go.jp/article/jjpsy/85/1/85_50/_article/-char/en"},
+    {"label": "Leary, Tate, Adams, Allen, & Hancock (2007). Self-compassion and reactions to unpleasant self-relevant events. Journal of Personality and Social Psychology, 92(5), 887-904.", "url": "https://www.semanticscholar.org/paper/Self-compassion-and-reactions-to-unpleasant-events:-Leary-Tate/889facf82abdb37227a601f72677b407ff1b97c7"},
+]
+GENERAL_TYPE = "general"   # 傾向のタイプ分けをしない。声かけは標準の文（DEFAULT_*）を使う
 
 TYPE_KEYS = ["perfectionist", "logical", "sensitive", "independent"]
 DIM_LABELS = {"perfectionist": "自分を責める傾向", "logical": "根拠・納得を求める傾向", "sensitive": "口調や空気への敏感さ", "independent": "自分で決めたい傾向"}
@@ -928,6 +987,16 @@ SUBORDINATE_SIGNALS = [
             r"(?:私|僕|自分|わたし|ぼく)(?:は|って|なんて|なんか)?(?:いつも|ずっと|本当に|ほんとに)?(?:足手まとい|落ちこぼれ|お荷物|ポンコツ|出来損ない|ダメ人間|だめ人間)",
             r"(?:何を|なにを)やっても(?:空回り|うまくいかな|ダメ|だめ|失敗|中途半端|続かな)",
             r"(?:ダメ|だめ|できてない|出来てない|足りてない)(?:だ)?(?:と|って)自分(?:でも|で)(?:も)?(?:思|感じ|分かって)",
+            # 発注書v20：話し言葉では「私」を省く。主語がなくても、自分への評価とわかる言い方
+            r"(?:全然|ぜんぜん|何も|なにも|ろくに|まともに|ちゃんと|しっかり)(?:できて|出来て|やれて|こなせて|役に立てて)(?:い)?(?:な|ませ)",
+            r"足を引っ張(?:って|り)(?:ばかり|ばっかり|しまっ|い(?:る|ます))",
+            r"自信(?:が|を)(?:なくなり|なくなっ|なくしま|失い|失っ|持てな|もてな)",
+            r"(?:また|何度も|毎回|いつも)(?:同じ)?(?:ミス|失敗|間違い)を?(?:して)?(?:しまっ|繰り返し|してい)",
+            r"(?:どうして|なんで)[^。、]{0,10}(?:できない|できなかった|気づけなかった|わからない|分からない|うまくいかない)(?:んだろう|のだろう|のかな|んでしょう|のでしょう)",
+            r"(?:私|僕|自分)なんか(?:が|に)[^。]{0,10}(?:いいのか|いいのかな)",
+            r"(?:自分|私|僕)(?:が)?(?:嫌|いや)(?:だ|です|になる|になって)",
+            r"迷惑を(?:かけて(?:しまっ|ばかり)|かけてい)",
+            r"(?:何も|なにも)(?:役に立て|貢献でき|力になれ)(?:て)?(?:い)?(?:な|ませ)",
         ],
         "hint": "部下さんが自分を責める言葉を使っています。まず「話してくれてありがとう」と受け止めてから、事実の話に戻すと安心しやすいです。",
         "forecast": {"perfectionist": "自分を責めているかも", "logical": "結論を急いでいるかも", "sensitive": "気持ちが沈んでいるかも", "independent": "結論を急いでいるかも"},
@@ -1195,11 +1264,20 @@ DISTRESS_STYLE = {
 }
 
 
+# 発注書v22：声かけを自己否定だけでなく全部の種類へ。固定文（40字以内）で、傾向の名前は出さない
+SIGNAL_VOICE = {
+    "give_up": "全部じゃなくて大丈夫です。分かっているところから、区切ってみましょう。",
+    "comparison": "人と比べなくて大丈夫です。進んだところを、いっしょに見ましょう。",
+    "distress": "無理しなくて大丈夫です。話してくれてありがとう。",
+    "over_apology": "責められているわけではないと思います。続きを聞かせてください。",
+}
+
+
 def self_blame_style(type_key: str | None) -> dict:
     return SELF_BLAME_STYLE.get(type_key or "", DEFAULT_SELF_BLAME_STYLE)
 
 
-def self_rewrite(sig_id: str, text: str, evidence: list[str] | None = None, type_key: str | None = None) -> dict:
+def _self_rewrite(sig_id: str, text: str, evidence: list[str] | None = None, type_key: str | None = None) -> dict:
     """自己否定の発言を、自分を客観視する手がかりに変える（画面だけに出す）。傾向があれば言い回しを合わせる。
     objective: 起きたこと / いま浮かんでいる評価の言葉 / 問い / 言い直しの例"""
     event = find_event_clause(text)
@@ -1220,18 +1298,35 @@ def self_rewrite(sig_id: str, text: str, evidence: list[str] | None = None, type
     if sig_id == "give_up":
         rw, ex = GIVE_UP_STYLE.get(type_key or "", ("全部じゃなくて大丈夫です。分かっている所と、分からない所を分けて伝えてみませんか？",
                                                    "「〇〇までは分かっています。△△の所を教えてもらえますか？」"))
-        return {"rewrite": rw, "rewrite_example": ex}
+        return {"rewrite": rw, "rewrite_example": ex, "voice": SIGNAL_VOICE["give_up"]}
     if sig_id == "comparison":
         rw, ex = COMPARISON_STYLE.get(type_key or "", ("人と比べなくて大丈夫です。自分が進めたところを、一つ見てみましょう。", "「〇〇までは進めました。次の課題は△△です」"))
-        return {"rewrite": rw, "rewrite_example": ex}
+        return {"rewrite": rw, "rewrite_example": ex, "voice": SIGNAL_VOICE["comparison"]}
     if sig_id == "distress":
         rw, ex = DISTRESS_STYLE.get(type_key or "", ("無理に頑張らなくて大丈夫です。つらい気持ちは、そのまま話して大丈夫です。", "「今、〇〇でつらいです。少し話を聞いてもらえますか」"))
-        return {"rewrite": rw, "rewrite_example": ex}
+        return {"rewrite": rw, "rewrite_example": ex, "voice": SIGNAL_VOICE["distress"]}
     if sig_id == "over_apology":
         rw, ex = OVER_APOLOGY_STYLE.get(type_key or "", ("何度も謝らなくて大丈夫です。これからすることを一つ伝えてみませんか？",
                                                         "「ご指摘ありがとうございます。次は〇〇します」"))
-        return {"rewrite": rw, "rewrite_example": ex}
+        return {"rewrite": rw, "rewrite_example": ex, "voice": SIGNAL_VOICE["over_apology"]}
     return {"rewrite": "", "rewrite_example": ""}
+
+
+# 発注書v23：リアルタイムの振り返り。その場でタップして選べる「次の一手」（固定文。種類ごと）
+NEXT_STEPS = {
+    "self_blame": ["指摘された点を、一言で復唱する", "分からない所を、具体的に聞く", "次の期限と進め方を、自分で決めて伝える"],
+    "give_up": ["分かっている所までを、先に伝える", "どこで止まっているかを、一つ聞く", "小さく区切って、最初の一歩だけやる"],
+    "comparison": ["自分が進めた所を、一つ挙げる", "自分のペースでの目標を、決めて伝える", "比べる基準を、事実で確かめる"],
+    "distress": ["いま一番つらいことを、一つだけ話す", "少し休みたいと伝える", "相談する相手を、決める"],
+    "over_apology": ["謝る代わりに、次にやることを一つ伝える", "指摘の中で役に立った点を、一言で伝える", "分からない所を、聞く"],
+}
+
+
+def self_rewrite(sig_id: str, text: str, evidence: list[str] | None = None, type_key: str | None = None) -> dict:
+    out = _self_rewrite(sig_id, text, evidence, type_key)
+    if sig_id in NEXT_STEPS:
+        out["next_steps"] = NEXT_STEPS[sig_id]
+    return out
 
 
 def signal_matches(sig: dict, text: str) -> bool:
@@ -1276,6 +1371,80 @@ def detect_subordinate_signal(text: str, recent_sub_texts: list[str], type_key: 
             **self_rewrite(sig["id"], text, extra.get("evidence") if extra else None, type_key),
         }
     return None
+
+
+# ---- 発注書v21：部下の発言をClaudeでも見分ける（設定「Claudeでも判定する」がオンのときだけ）----
+# ルールで拾えなかった発言だけを送る。Claudeが返すのは種類（enum）だけで、声や画面に出す文は端末内の固定文を使う
+SUB_SIGNAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "signal": {"type": "string", "enum": ["none", "self_blame", "give_up", "comparison", "distress"]},
+        "strong": {"type": "boolean"},
+    },
+    "required": ["signal", "strong"],
+    "additionalProperties": False,
+}
+SUB_SIGNAL_SYSTEM = (
+    "あなたは1on1面談の発言を分類します。最新の発言が、話した本人についての次のどれに当たるかだけを返してください。\n"
+    "- self_blame：自分の価値・能力を否定する、自分を責める（例：全然できてなくて、自信がなくなった）\n"
+    "- give_up：手が止まっている、無理・分からないと諦めている\n"
+    "- comparison：他の人と比べて自分を低く見ている\n"
+    "- distress：つらい・しんどい・眠れないなど、つらさを話している\n"
+    "- none：上記でない。普通の報告・質問・相づち・事実の説明・他の人への指摘・淡々とした謝罪（すみません単発）\n"
+    "strong：自己否定が重く、自分の価値を決めつけている場合だけ true。迷ったら none、strong は false。"
+)
+sub_claude_cache: dict = {}
+sub_claude_lock = threading.Lock()
+
+
+def claude_subordinate_signal(config: dict, text: str, context: list[str], type_key: str, is_demo: bool = False) -> tuple[dict | None, bool]:
+    """ルールで拾えなかった部下の発言を、Claudeに種類だけ見分けてもらう。送るのは最新の発言と直前の2発言（名前は置き換え済み）"""
+    if is_demo or not claude_allowed(config) or len(re.sub(r"[\s、。，．,.!！?？…]", "", text)) < 6:
+        return None, False
+    ctx = tuple(context[-2:])
+    key = (text, ctx)
+    with sub_claude_lock:
+        if key in sub_claude_cache:
+            verdict = sub_claude_cache[key]
+        else:
+            verdict = "pending"
+    sent = False
+    if verdict == "pending":
+        sent = True   # ここから先は、実際に送る
+        is_haiku = "haiku" in CLAUDE_MODEL
+        params = {"thinking": {"type": "disabled"}} if is_haiku else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        ctx_text = "\n".join(f"- {c}" for c in ctx) or "（なし）"
+        try:
+            api = client.with_options(timeout=max(CLAUDE_TIMEOUT_SEC, 5.0), max_retries=0)   # 部下の見分けは急がない（上司の判定ほど速さが要らない）
+            response = (api.messages if is_haiku else api.beta.messages).create(
+                model=CLAUDE_MODEL, max_tokens=128, system=SUB_SIGNAL_SYSTEM,
+                messages=[{"role": "user", "content": f"【直前の発言】\n{ctx_text}\n\n【最新の発言】\n{text}"}],
+                output_config={"effort": "low", "format": {"type": "json_schema", "schema": SUB_SIGNAL_SCHEMA}},
+                **params,
+            )
+            if response.stop_reason in ("refusal", "max_tokens"):
+                return None, True
+            verdict = json.loads(next(b.text for b in response.content if b.type == "text"))
+        except (anthropic.NotFoundError, anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.BadRequestError) as e:
+            api_state["disabled"] = True
+            api_state["last_error"] = f"{type(e).__name__}: model={CLAUDE_MODEL}"
+            return None, True
+        except (json.JSONDecodeError, anthropic.APIError, StopIteration, KeyError, IndexError) as e:
+            api_state["last_error"] = type(e).__name__
+            return None, True
+        with sub_claude_lock:
+            if len(sub_claude_cache) > 200:
+                sub_claude_cache.clear()
+            sub_claude_cache[key] = verdict
+    sig = next((x for x in SUBORDINATE_SIGNALS if x["id"] == verdict.get("signal")), None)
+    if not sig:
+        return None, sent
+    extra = {"strength": "strong" if verdict.get("strong") else "normal"} if sig["id"] == "self_blame" else {}
+    return {
+        "id": sig["id"], "label": sig["label"], "title": sig.get("title", ""), "hint": sig["hint"],
+        "forecast": sig["forecast"].get(type_key, "様子を見たい場面です"), "reframe": sig.get("reframe", ""),
+        **extra, **self_rewrite(sig["id"], text, None, type_key), "source": "claude",
+    }, sent
 
 
 # 部下の良い受け取り方（その場で小さく褒める。数えるだけで減点しない）
@@ -1371,52 +1540,65 @@ def build_profile_result(config: dict, primary: str, secondary, scores) -> dict:
     }
 
 
-def _answer(answers: dict, qid: str):
-    v = answers.get(qid)
-    try:
-        return max(0, min(3, int(v)))
-    except (TypeError, ValueError):
-        return None
+def score_scs(answers: dict) -> dict:
+    """SCS-J の採点（原作者の採点表どおり）。回答は項目ID "s1"〜"s26" → 1〜5。
+    逆転項目（自己批判・孤独感・過剰同一化）を 6−回答 にして下位尺度ごとの平均を出し、6つの平均の平均を総得点とする。
+    全26項目に答えていなければ ValueError"""
+    vals = {}
+    for n in SCS_ITEMS:
+        v = answers.get(f"s{n}")
+        if not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= 5:
+            raise ValueError(f"s{n} の回答が1〜5ではありません")
+        vals[n] = v
+    subs = {}
+    for key, (_, nums, rev) in SCS_SUBSCALES.items():
+        subs[key] = sum((6 - vals[n]) if rev else vals[n] for n in nums) / len(nums)
+    total = sum(subs.values()) / len(subs)
+    level = "low" if total < 2.5 else "moderate" if total <= 3.5 else "high"
+    return {"total": total, "subscales": subs, "level": level}
 
 
-def score_profile(answers: dict) -> dict:
-    """傾向ごとに 0〜100 点。逆の聞き方の質問は、答えを反転して足す"""
-    totals = {k: 0 for k in TYPE_KEYS}
-    counts = {k: 0 for k in TYPE_KEYS}
-    for q in PROFILE_QUESTIONS:
-        a = _answer(answers, q["id"])
-        if a is None:
-            continue
-        totals[q["dim"]] += (3 - a) if q["reverse"] else a
-        counts[q["dim"]] += 1
-    return {k: round(totals[k] / (counts[k] * 3) * 100) if counts[k] else 0 for k in TYPE_KEYS}
+def build_default_result() -> dict:
+    """自己チェックを行わずに始める場合。傾向の調整はせず、標準の声かけと「ふつう」の感度にする"""
+    return {
+        "kind": "default",
+        "primary": GENERAL_TYPE,
+        "secondary": None,
+        "label": "標準の設定（自己チェックは未実施）",
+        "scores": None,
+        "scs": None,
+        "watch_points": [],
+        "recommended_sensitivity": "medium",
+        "low_signal": False,
+        "analyzed_at": datetime.now().isoformat(),
+        "answers": None,
+    }
 
 
-def profile_confidence(answers: dict, scores: dict) -> dict:
-    """答えの確かさ。全部同じ答え・逆の聞き方との矛盾・未回答を見る"""
-    given = [(q, _answer(answers, q["id"])) for q in PROFILE_QUESTIONS]
-    given = [(q, a) for q, a in given if a is not None]
-    reasons = []
-    if len(given) < len(PROFILE_QUESTIONS):
-        reasons.append(f"未回答が{len(PROFILE_QUESTIONS) - len(given)}問あります")
-    if given and len({a for _, a in given}) == 1:
-        reasons.append("すべて同じ答えになっています")
-    conflicts = 0
-    for dim in TYPE_KEYS:
-        fwd = [a for q, a in given if q["dim"] == dim and not q["reverse"]]
-        rev = [a for q, a in given if q["dim"] == dim and q["reverse"]]
-        if fwd and rev and sum(fwd) / len(fwd) >= 2.4 and rev[0] >= 2:
-            conflicts += 1
-    if conflicts:
-        reasons.append(f"逆の聞き方の質問と食い違う答えが{conflicts}か所あります")
-    level = "high"
-    if len({a for _, a in given}) <= 1 or conflicts >= 2 or len(given) < len(PROFILE_QUESTIONS) * 0.75:
-        level = "low"
-    elif conflicts == 1 or len(given) < len(PROFILE_QUESTIONS):
-        level = "medium"
-    ranked = sorted(scores.values(), reverse=True)
-    mixed = len(ranked) > 1 and ranked[0] - ranked[1] < 8
-    return {"level": level, "reasons": reasons, "mixed": mixed}
+def build_scs_result(answers: dict) -> dict:
+    """答え → 結果（得点・目安・論文に基づく説明）。傾向のタイプ分けはしない"""
+    s = score_scs(answers)
+    lv = SCS_LEVELS[s["level"]]
+    return {
+        "kind": "scs",
+        "primary": GENERAL_TYPE,
+        "secondary": None,
+        "label": f"つらいときの自分への接し方：{lv['label']}",
+        "scores": None,
+        "scs": {
+            "total": round(s["total"], 2),
+            "level": s["level"],
+            "level_label": lv["label"],
+            "subscales": {k: {"label": SCS_SUBSCALES[k][0], "score": round(v, 2)} for k, v in s["subscales"].items()},
+            "body": lv["body"],
+            "notes": SCS_NOTES,
+            "sources": SCS_SOURCES,
+        },
+        "watch_points": [],
+        "recommended_sensitivity": lv["sensitivity"],
+        "low_signal": False,
+        "analyzed_at": datetime.now().isoformat(),
+    }
 
 
 def strip_safe_clauses(transcript: str) -> str:
@@ -1523,7 +1705,7 @@ class ProfileRequest(BaseModel):
 
 @app.get("/profile/questions")
 async def profile_questions():
-    return JSONResponse([{"id": q["id"], "dim": q["dim"], "boss": q["boss"], "self": q["self"]} for q in PROFILE_QUESTIONS])
+    return JSONResponse([{"id": f"s{n}", "text": t, "scale": 5} for n, t in SCS_ITEMS.items()])
 
 
 @app.get("/profile")
@@ -1534,21 +1716,20 @@ async def get_profile():
 @app.post("/profile/analyze")
 async def analyze_profile(req: ProfileRequest):
     config = load_config()
-    if req.preset:
+    if req.preset == GENERAL_TYPE:
+        result = build_default_result()
+    elif req.preset:
         if req.preset not in config.get("personality_presets", {}):
             return JSONResponse({"error": "unknown preset"}, status_code=400)
         result = build_profile_result(config, req.preset, None, None)
         result["answers"] = None
     else:
-        answers = req.answers or {}
-        scores = score_profile(answers)
-        ranked = sorted(TYPE_KEYS, key=lambda t: -scores[t])
-        primary, runner_up = ranked[0], ranked[1]
-        secondary = runner_up if scores[runner_up] >= 40 and scores[primary] - scores[runner_up] <= 15 else None
-        result = build_profile_result(config, primary, secondary, scores)
-        result["answers"] = answers
-        result["respondent"] = "self" if req.respondent == "self" else "boss"
-        result["confidence"] = profile_confidence(answers, scores)
+        try:
+            result = build_scs_result(req.answers or {})
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        result["answers"] = req.answers
+        result["respondent"] = "self"   # 本人が答える尺度。上司が代わりに答える形は取らない
 
     config["active_preset"] = result["primary"]
     config["profile_analysis"] = result
@@ -1687,6 +1868,9 @@ def analyze_any(req: AnalyzeRequest, config: dict, masked_transcript: str, maske
             "masked": masked_transcript,
         })
     signal = detect_subordinate_signal(masked_transcript, recent, config.get("active_preset", "perfectionist"), any_mode=True)
+    sent_claude = False
+    if not signal:
+        signal, sent_claude = claude_subordinate_signal(config, masked_transcript, recent, config.get("active_preset", "perfectionist"), is_demo)
     if signal:
         session_log["subordinate_signals"].append({
             "timestamp": datetime.now().isoformat(),
@@ -1708,7 +1892,9 @@ def analyze_any(req: AnalyzeRequest, config: dict, masked_transcript: str, maske
         })
     result["speaker"] = "any"
     result["subordinate_signal"] = signal
-    result["sent_data"] = {"external_sent": False, "note": "話者を分けない設定では、発言を外部に送っていません"}
+    result["sent_data"] = ({"external_sent": True, "to": "Anthropic", "masked_transcript": masked_transcript, "masked_context": recent,
+                            "also_sent": ["（種類の見分けだけ。部下の特性や設定は送りません）"]}
+                           if sent_claude else {"external_sent": False, "note": "話者を分けない設定では、発言を外部に送っていません"})
     return result
 
 
@@ -1749,6 +1935,9 @@ def analyze(req: AnalyzeRequest):
         signal = detect_subordinate_signal(masked_transcript, recent_sub, config.get("active_preset", "perfectionist"))
         skills = detect_receive_skills(masked_transcript)
         is_demo = req.speaker_source == "demo"
+        sent_claude = False
+        if not signal and not req.speaker_unsure:
+            signal, sent_claude = claude_subordinate_signal(config, masked_transcript, recent_sub, config.get("active_preset", "perfectionist"), is_demo)
         if signal:
             session_log["subordinate_signals"].append({
                 "timestamp": datetime.now().isoformat(),
@@ -1771,7 +1960,9 @@ def analyze(req: AnalyzeRequest):
             "reason": f"部下の発言（{signal['label']}）" if signal else "部下の発言のため介入判定の対象外",
             "subordinate_signal": signal,
             "receive_skills": skills,
-            "sent_data": {"external_sent": False, "note": "部下の発言はこの時点では外部に送っていません"},
+            "sent_data": ({"external_sent": True, "to": "Anthropic", "masked_transcript": masked_transcript, "masked_context": recent_sub,
+                           "also_sent": ["（種類の見分けだけ。部下の特性や設定は送りません）"]}
+                          if sent_claude else {"external_sent": False, "note": "部下の発言はこの時点では外部に送っていません"}),
         })
 
     allow = not req.speaker_unsure and req.speaker_source != "demo"
@@ -1945,9 +2136,7 @@ class EndSessionRequest(BaseModel):
 
 
 def log_for_disk(log: dict, config: dict) -> dict:
-    """保存するログ。既定では発言の原文・実名表・回答を残さず、件数と判断だけを残す"""
-    if (config.get("privacy") or {}).get("log_raw"):
-        return log
+    """保存するログ。発言の原文・実名表・回答は常に残さず、件数と判断だけを残す（原文を残す設定はない）"""
     snapshot = log.get("config_snapshot") or {}
     return {
         "started_at": log.get("started_at"),

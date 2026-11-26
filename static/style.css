@@ -1083,6 +1083,22 @@ kbd { font-family: inherit; font-size: 10px; color: var(--muted); border: 1px so
 .receive-focus { margin-top: 8px; font-weight: 700; color: var(--sub); }
 .receive-summary .notice { margin-top: 10px; }
 .receive-summary .btn { margin-top: 12px; }
+.reflect-moment { border: 1px solid var(--line, #e3e6ee); border-radius: var(--radius-sm); padding: 14px; margin-top: 12px; }
+.reflect-quote { font-weight: 600; margin-bottom: 8px; }
+.reflect-eval { margin: 10px 0; font-size: 14px; }
+.reflect-field { display: block; margin-top: 8px; }
+.reflect-label { display: block; font-size: 13px; margin-bottom: 4px; }
+.reflect-field input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line, #cfd4e0); border-radius: var(--radius-sm); font: inherit; }
+.reflect-out { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--warn-soft); }
+.reflect-note { margin-top: 12px; font-size: 12px; }
+.speech-next { margin-top: 10px; }
+.speech-next small { display: block; margin-bottom: 6px; opacity: .8; }
+.speech-next-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.speech-next-chips button { border: 1px solid var(--line, #cfd4e0); background: #fff; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.speech-next-chips button:hover { background: var(--warn-soft); }
+.speech-next-chips button:disabled { opacity: .5; cursor: default; }
+.speech-next-done { margin-top: 8px; font-weight: 600; }
+.reflect .btn { margin-top: 10px; }
 
 .practice .skill-list { list-style: none; padding: 0; margin: 12px 0 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .practice .skill-list li { background: var(--sub-soft); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; color: var(--ink-2); line-height: 1.6; }
@@ -1106,3 +1122,15 @@ kbd { font-family: inherit; font-size: 10px; color: var(--muted); border: 1px so
 .speech-objective small { display: block; font-size: 11px; font-weight: 700; color: var(--muted); }
 .speech-objective .obj-q { background: var(--sub-soft); border: 1px solid var(--sub-line); font-weight: 700; }
 .speech-objective .obj-q small { color: var(--sub); }
+
+/* セルフ・コンパッション尺度：質問の教示と、結果の説明 */
+.q-instruction { margin: 0 0 14px; font-size: 13px; line-height: 1.7; color: var(--ink-2); background: var(--calm-soft); padding: 10px 14px; border-radius: var(--radius-sm); }
+.scs-card p { margin: 0 0 10px; font-size: 14px; line-height: 1.8; color: var(--ink-2); }
+.scs-card .scs-total { font-size: 15px; font-weight: 700; color: var(--ink); }
+.scs-notes { margin: 14px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.75; color: var(--ink-2); }
+.scs-sources { margin-top: 12px; font-size: 12px; color: var(--ink-2); }
+.scs-sources summary { cursor: pointer; }
+.scs-sources ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.7; }
+.scs-sources a { color: inherit; text-decoration: underline; }
+.q-options.is-five { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 700px) { .q-options.is-five { grid-template-columns: 1fr; } }

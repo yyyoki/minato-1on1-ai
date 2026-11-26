@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>view view｜1on1見守りAI</title>
-  <link rel="stylesheet" href="/static/style.css?v=20">
+  <link rel="stylesheet" href="/static/style.css?v=22">
 </head>
 <body>
 <div id="app" data-screen="start">
@@ -16,7 +16,7 @@
       <span class="brand-sub">1on1見守りAI</span>
     </button>
     <ol class="stepper" id="stepper" aria-label="進行状況">
-      <li data-step="analyze"><span>1</span>傾向診断</li>
+      <li data-step="analyze"><span>1</span>自己チェック</li>
       <li data-step="profile"><span>2</span>確認</li>
       <li data-step="voices"><span>3</span>面談の準備</li>
       <li data-step="meeting"><span>4</span>面談</li>
@@ -41,7 +41,7 @@
           <h1>指摘を受けた<span class="marker">その場で</span>、<br>自分を責めずに受け取る。</h1>
           <p class="lead">指摘を受けた瞬間、「出来事」を「自分の価値の否定」と受け取ってしまうことがあります。view viewは部下本人の側で、片耳のイヤホンから短く声をかけ、起きたことと自分への評価を分けて見る手助けをします。上司の言葉は変えません。</p>
           <div class="cta-row">
-            <button class="btn btn-primary btn-lg" id="btnBegin" type="button">部下さんの傾向診断（本人が答えます）</button>
+            <button class="btn btn-primary btn-lg" id="btnBegin" type="button">部下さんの自己チェック（本人が答えます）</button>
             <button class="btn btn-ghost btn-lg" id="btnQuick" type="button" hidden>前回の分析で面談する</button>
           </div>
           <p class="quick-note" id="quickNote" hidden></p>
@@ -52,7 +52,7 @@
       <ol class="flow">
         <li>
           <span class="flow-num">1</span>
-          <div><b>傾向診断（最初に1回）</b><small>部下さん本人が24の質問に答えます。view viewが受け止め方の傾向を覚えます</small></div>
+          <div><b>自己チェック（最初に1回）</b><small>部下さん本人が26の質問に答えます。つらいときの自分への接し方の目安を、view viewが覚えます</small></div>
         </li>
         <li>
           <span class="flow-num">2</span>
@@ -85,21 +85,17 @@
         <div class="question-wrap" id="questionWrap">
           <div class="progress" aria-hidden="true"><div class="progress-bar" id="qProgress"></div></div>
           <div class="question card" id="questionCard">
-            <div class="q-meta"><span class="q-num" id="qNum">Q1</span><span class="q-count" id="qCount">1 / 24</span></div>
+            <div class="q-meta"><span class="q-num" id="qNum">Q1</span><span class="q-count" id="qCount">1 / 26</span></div>
+            <p class="q-instruction" id="qInstruction" hidden></p>
             <p class="q-text" id="qText"></p>
             <div class="q-options" id="qOptions" role="radiogroup"></div>
           </div>
           <div class="q-nav">
             <button class="btn btn-text" id="qPrev" type="button">← 前の質問</button>
-            <button class="btn btn-text" id="btnShowPresets" type="button">質問をスキップしてタイプを選ぶ</button>
+            <button class="btn btn-text" id="btnShowPresets" type="button">質問をスキップして標準の設定で始める</button>
           </div>
         </div>
 
-        <div class="presets" id="presetPicker" hidden>
-          <h2 class="section-title">タイプを直接選ぶ</h2>
-          <div class="preset-grid" id="presetGrid"></div>
-          <button class="btn btn-text" id="btnBackToQuestions" type="button">← 質問に戻る</button>
-        </div>
       </div>
     </section>
 
@@ -117,7 +113,14 @@
             <p class="notice" id="pfLowSignal" hidden>強い傾向は見られませんでした。介入感度は「低」がおすすめです。</p>
           </div>
 
-          <div class="two-col">
+          <div class="card scs-card" id="pfScs" hidden>
+            <h3 class="card-title">この得点について（論文より）</h3>
+            <div id="pfScsBody"></div>
+            <ul class="scs-notes" id="pfScsNotes"></ul>
+            <details class="scs-sources"><summary>出典</summary><ul id="pfScsSources"></ul></details>
+          </div>
+
+          <div class="two-col" id="pfTwoCol">
             <div class="card">
               <h3 class="card-title"><span class="dot dot-warn"></span>view viewが特に気をつける言い方</h3>
               <ul class="watch-list" id="pfWatch"></ul>
@@ -138,7 +141,7 @@
             <p class="recommend" id="pfRecommend"></p>
           </div>
 
-          <details class="card details">
+          <details class="card details" id="pfDetails">
             <summary>プロファイルを詳しく編集する</summary>
             <div class="form-grid">
               <label class="field"><span>性格特性</span><textarea id="pfEditTraits" rows="2"></textarea></label>
@@ -395,6 +398,11 @@
               <p class="obj-q"><small>view viewからの問い</small><span id="objQuestion"></span></p>
             </div>
             <p class="speech-reply" id="speechReply" hidden><small id="speechReplyLabel">言えるひとこと</small><span id="speechReplyText"></span></p>
+            <div class="speech-next" id="speechNext" hidden>
+              <small>いま、次の一手を選んでみませんか（1つタップ）</small>
+              <div class="speech-next-chips" id="speechNextChips"></div>
+              <p class="speech-next-done" id="speechNextDone" hidden></p>
+            </div>
             <div class="speech-feedback" id="speechFeedback" hidden>
               <button type="button" data-feedback="good">助かった</button>
               <button type="button" data-feedback="bad">今のは不要</button>
@@ -463,6 +471,13 @@
           <p class="body-text" id="smReceiveText"></p>
           <p class="notice" id="smReceiveBoss" hidden></p>
           <button class="btn btn-ghost" id="btnPracticeAgain" type="button">受け取り方の練習をする（5問）</button>
+        </div>
+
+        <div class="card reflect">
+          <h3 class="card-title">いっしょにふりかえる（行動と、自分の受け取り方）</h3>
+          <p class="body-text" id="reflectLead"></p>
+          <div id="reflectBody"></div>
+          <p class="muted reflect-note">ここに書いた内容は、保存も送信もしません。この画面を離れると消えます。自分を責める材料ではなく、次の一手を決めるための場です。</p>
         </div>
 
         <div class="card">
@@ -629,13 +644,12 @@
       </label>
       <p class="field-help">上限に達した回や話すタイミングがなかった回は、声を出さず画面に表示します。回数はいずれも仮の値です。</p>
       <label class="check-row"><input type="checkbox" id="setUseClaude"> Claudeでも判定する（外部送信あり・API利用料あり）</label>
-      <p class="field-help">オンにすると、気になる言い方が見つかった発言について、匿名化した発言、直近の会話（部下の発言を含む）、部下の特性をAnthropicへ送ります。オフならすべてこのPC内で判定します。</p>
+      <p class="field-help">オンにすると、ルールで拾えなかった部下の発言（6文字以上）も、直前の2発言とあわせて種類の見分けのために送ります。さらに、気になる言い方が見つかった発言について、匿名化した発言、直近の会話（部下の発言を含む）、部下の特性をAnthropicへ送ります。オフならすべてこのPC内で判定します。</p>
 
       <h3 class="drawer-section">プライバシー</h3>
       <label class="check-row"><input type="checkbox" id="setShowProfile"> この画面は上司だけが見ている（部下の特性を表示する）</label>
       <p class="field-help">オフの間は、面談画面とふりかえりに部下のタイプや傾向を表示しません。部下と同じ画面を見る場合や画面共有中はオフのままにしてください。</p>
-      <label class="check-row"><input type="checkbox" id="setLogRaw"> ログに発言の原文を保存する</label>
-      <p class="field-help">オフの間は、発言の文字数と判定結果だけを保存します。</p>
+      <p class="field-help">発言の原文は保存しません。ログに残るのは、発言の文字数と判定結果だけです。</p>
 
       <h3 class="drawer-section">Zoom連携</h3>
       <label class="check-row"><input type="checkbox" id="zoomEnabled"> Zoomの参加者名で上司・部下を見分ける</label>
@@ -666,7 +680,7 @@
 <script src="/static/metrics.js?v=12"></script>
 <script src="/static/audio.js?v=17"></script>
 <script src="/static/stage_link.js?v=3"></script>
-<script src="/static/app.js?v=30"></script>
+<script src="/static/app.js?v=35"></script>
 <script src="/static/measure.js?v=13"></script>
 </body>
 </html>

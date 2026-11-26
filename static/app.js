@@ -7,12 +7,15 @@ const TYPE_META = {
   logical: { color: "var(--type-logical)", desc: "根拠のない指摘や感情論が苦手", tense: "納得できていなさそう" },
   sensitive: { color: "var(--type-sensitive)", desc: "声のトーンや場の空気に敏感", tense: "固まってしまいそう" },
   independent: { color: "var(--type-independent)", desc: "細かい指示や口出しで、やる気が下がりやすい", tense: "やり方を否定されたと感じていそう" },
+  general: { color: "#7B8199", desc: "", tense: "" },   // セルフ・コンパッション尺度の結果。傾向のタイプ分けはしない
 };
-const TYPE_ORDER = ["perfectionist", "logical", "sensitive", "independent"];
 const DIM_LABEL = { perfectionist: "自分を責める傾向", logical: "根拠・納得を求める傾向", sensitive: "口調や空気への敏感さ", independent: "自分で決めたい傾向" };
 const SITUATION_LABEL = { progress: "進捗の確認", feedback: "指摘とフォロー", goal: "目標の設定", casual: "雑談・相談" };
 const CONFIDENCE_LABEL = { high: "確かさ：高", medium: "確かさ：中", low: "確かさ：低（参考程度に）" };
 const OPTIONS = [["まったく", "当てはまらない"], ["あまり", "当てはまらない"], ["やや", "当てはまる"], ["とても", "当てはまる"]];
+// セルフ・コンパッション尺度（日本語版）の回答：1〜5。原典どおり、両端だけに言葉を付ける
+const OPTIONS5 = [["ほとんど全く", "そうしない"], ["2"], ["3"], ["4"], ["ほとんどいつも", "そうする"]];
+const SCS_INSTRUCTION = "つらいとき、ふだん自分にどう接しているかを答えてください。それぞれの文について、どのくらいそうするかを選びます。「こうありたい」ではなく、実際の自分に近いほうで答えてください。";
 const SENSITIVITY_LABEL = { low: "控えめ", medium: "ふつう", high: "積極的" };
 const SCREENS = ["analyze", "profile", "voices", "meeting", "summary"];
 const WHO = { boss: "上司", subordinate: "部下", any: "会話" };   // any＝話者を分けない（誰の言葉でも、部下のフォローに使う）
@@ -246,14 +249,13 @@ function updateQuickStart() {
   }
 }
 
-// ---------- ② 傾向診断（部下本人が答える） ----------
+// ---------- ② 自己チェック（セルフ・コンパッション尺度 日本語版。部下本人が答える） ----------
 function startAnalysis() {
   state.answers = {};
   state.qIndex = 0;
   state.respondent = "self";
   $("questionWrap").hidden = false;
-  $("presetPicker").hidden = true;
-  $("analyzeBubble").textContent = "部下さんご本人が答えてください。ふだんの自分にいちばん近いものを選んでくださいね。正解はありません！";
+  $("analyzeBubble").textContent = "部下さんご本人が答えてください。つらいとき、ふだん自分にどう接しているかを、いちばん近いもので選んでくださいね。正解はありません！";
   chars.analyze.setState("idle");
   renderQuestion();
   showScreen("analyze");
@@ -264,20 +266,26 @@ function renderQuestion() {
   const q = qs[state.qIndex];
   $("qNum").textContent = "Q" + (state.qIndex + 1);
   $("qCount").textContent = `${state.qIndex + 1} / ${qs.length}`;
-  $("qText").textContent = q.self;
+  const five = q.scale === 5;
+  $("qText").textContent = q.text || q.self;
+  $("qInstruction").hidden = !five;
+  $("qInstruction").textContent = five ? SCS_INSTRUCTION : "";
   $("qProgress").style.width = (state.qIndex / qs.length) * 100 + "%";
   $("qPrev").style.visibility = state.qIndex === 0 ? "hidden" : "visible";
 
   const wrap = $("qOptions");
   wrap.replaceChildren();
-  OPTIONS.forEach((label, i) => {
+  const opts = five ? OPTIONS5 : OPTIONS;
+  wrap.classList.toggle("is-five", five);
+  opts.forEach((label, i) => {
+    const value = five ? i + 1 : i;
     const b = el("button", "q-option");
     b.type = "button";
     b.setAttribute("role", "radio");
-    b.setAttribute("aria-checked", String(state.answers[q.id] === i));
-    if (state.answers[q.id] === i) b.classList.add("is-selected");
+    b.setAttribute("aria-checked", String(state.answers[q.id] === value));
+    if (state.answers[q.id] === value) b.classList.add("is-selected");
     const scale = el("span", "q-scale");
-    for (let k = 0; k < 4; k++) scale.appendChild(el("i", k <= i ? "on" : ""));
+    for (let k = 0; k < opts.length; k++) scale.appendChild(el("i", k <= i ? "on" : ""));
     const text = el("span", "q-label");
     label.forEach((part) => text.appendChild(el("span", "", part)));
     b.append(scale, text);
@@ -296,7 +304,7 @@ function chooseAnswer(value) {
   if (answering) return;
   answering = true;
   const q = state.questions[state.qIndex];
-  state.answers[q.id] = value;
+  state.answers[q.id] = q.scale === 5 ? value + 1 : value;
   document.querySelectorAll(".q-option").forEach((b, i) => b.classList.toggle("is-selected", i === value));
 
   const half = Math.floor(state.questions.length / 2) - 1;
@@ -320,7 +328,7 @@ function chooseAnswer(value) {
 
 async function finishAnalysis(payload) {
   $("qProgress").style.width = "100%";
-  $("analyzeBubble").textContent = "ありがとうございます！今、受け止め方の傾向を分析していますね…";
+  $("analyzeBubble").textContent = "ありがとうございます！結果をまとめていますね…";
   chars.analyze.setState("thinking");
   try {
     const [result] = await Promise.all([
@@ -341,35 +349,44 @@ async function finishAnalysis(payload) {
   }
 }
 
-function showPresets() {
-  const grid = $("presetGrid");
-  grid.replaceChildren();
-  const presets = state.config.personality_presets || {};
-  TYPE_ORDER.filter((k) => presets[k]).forEach((key) => {
-    const p = presets[key];
-    const card = el("button", "preset-card");
-    card.type = "button";
-    card.style.setProperty("--accent", TYPE_META[key].color);
-    card.append(el("b", "", p.label), el("span", "", p.traits));
-    card.addEventListener("click", () => finishAnalysis({ preset: key }));
-    grid.appendChild(card);
+// ---------- ③ 分析結果 ----------
+function renderScs(scs) {
+  const body = $("pfScsBody");
+  body.replaceChildren(el("p", "scs-total", `総得点 ${scs.total.toFixed(2)} / 5.00　（目安：${scs.level_label}）`));
+  scs.body.forEach((t) => body.appendChild(el("p", "", t)));
+  const notes = $("pfScsNotes");
+  notes.replaceChildren();
+  scs.notes.forEach((t) => notes.appendChild(el("li", "", t)));
+  const src = $("pfScsSources");
+  src.replaceChildren();
+  scs.sources.forEach((s) => {
+    const li = el("li");
+    if (s.url) {
+      const a = el("a", "", s.label);
+      a.href = s.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      li.appendChild(a);
+    } else li.textContent = s.label;
+    src.appendChild(li);
   });
-  $("questionWrap").hidden = true;
-  $("presetPicker").hidden = false;
-  $("analyzeBubble").textContent = "タイプがわかっている場合は、ここから選んでくださいね！";
 }
 
-// ---------- ③ 分析結果 ----------
 function renderProfile(fresh) {
   const p = state.profile;
   const preset = state.config.personality_presets[p.primary] || {};
+  const scs = p.kind === "scs" ? p.scs : null;
+  const isDefault = p.kind === "default";
+  $("pfScs").hidden = !scs;
+  $("pfTwoCol").hidden = !!scs || isDefault;      // 「特に気をつける言い方」「響きやすい伝え方」は、タイプ分けの表に基づくため、この結果では出さない
+  $("pfDetails").hidden = !!scs || isDefault;
+  if (scs) renderScs(scs);
 
   $("pfLabel").textContent = p.label;
-  $("pfEyebrow").textContent = p.scores ? "診断結果・近いタイプ（参考）" : "選んだタイプ";
+  $("pfEyebrow").textContent = scs ? "セルフ・コンパッション尺度（日本語版）の結果" : isDefault ? "標準の設定" : p.scores ? "診断結果・近いタイプ（参考）" : "選んだタイプ";
   document.querySelector(".result-card").style.setProperty("--accent", TYPE_META[p.primary].color);
   $("pfSecondary").textContent = p.secondary_label
     ? `「${p.secondary_label}」の傾向もあわせ持っています`
-    : p.scores ? "" : "タイプを直接選択しました";
+    : isDefault ? "自己チェックを行っていないため、傾向に合わせた調整はしません。標準の声かけと「ふつう」の感度で始めます。"
+    : p.scores || scs ? "" : "タイプを直接選択しました";
 
   const bars = $("pfScores");
   bars.replaceChildren();
@@ -383,7 +400,7 @@ function renderProfile(fresh) {
     $("pfConfidence").textContent = [CONFIDENCE_LABEL[conf.level], ...conf.reasons,
       conf.mixed ? "上位の傾向が近いため、1つのタイプに決めつけず両方を参考にします" : ""].filter(Boolean).join("　");
   }
-  $("pfTraits").textContent = preset.traits || "";
+  $("pfTraits").textContent = scs || isDefault ? "" : preset.traits || "";
   $("pfLowSignal").hidden = !p.low_signal;
   $("pfApproach").textContent = preset.meta_triggers || "";
 
@@ -401,7 +418,11 @@ function renderProfile(fresh) {
 
   if (fresh) state.sensitivity = p.recommended_sensitivity || state.sensitivity;
   renderSensitivity();
-  $("profileBubble").textContent = `わかりました！今日は「${p.label}」の受け止め方に合わせて、そっと見守りますね。`;
+  $("profileBubble").textContent = isDefault
+    ? "標準の設定で始めますね。自己チェックは、いつでもやり直せます。"
+    : scs
+    ? "結果をお見せしますね。これは診断ではなく、声かけの目安です。"
+    : `わかりました！今日は「${p.label}」の受け止め方に合わせて、そっと見守りますね。`;
 }
 
 function renderSensitivity() {
@@ -411,15 +432,20 @@ function renderSensitivity() {
     b.setAttribute("aria-checked", String(active));
   });
   const rec = state.profile && state.profile.recommended_sensitivity;
-  $("pfRecommend").textContent = rec ? `分析結果からは「${SENSITIVITY_LABEL[rec]}」をおすすめしています` : "";
+  const isScs = state.profile && state.profile.kind === "scs";
+  $("pfRecommend").textContent = rec
+    ? (isScs ? `この得点を目安に「${SENSITIVITY_LABEL[rec]}」をおすすめしています（設計上の判断で、効果は検証中です）` : `分析結果からは「${SENSITIVITY_LABEL[rec]}」をおすすめしています`)
+    : "";
 }
 
 async function saveProfileEdits() {
   const key = state.profile.primary;
   const preset = state.config.personality_presets[key];
-  preset.traits = $("pfEditTraits").value.trim();
-  preset.landmines = $("pfEditLandmines").value.trim();
-  preset.meta_triggers = $("pfEditMeta").value.trim();
+  if (preset && state.profile.kind !== "scs") {   // セルフ・コンパッション尺度の結果には、編集するタイプの設定がない
+    preset.traits = $("pfEditTraits").value.trim();
+    preset.landmines = $("pfEditLandmines").value.trim();
+    preset.meta_triggers = $("pfEditMeta").value.trim();
+  }
   state.config.active_preset = key;
   state.config.sensitivity = state.sensitivity;
   state.config.audio = Object.assign({}, state.config.audio, { form: state.form, local_role: state.localRole, voice_out: state.voiceOut, stage_tip: state.stageTip, voice_on: state.voiceOn, earphone: state.earphone, situation: state.situation });
@@ -543,7 +569,7 @@ function renderForm() {
   if (state.form === "online" || state.voiceOut === "stage") $("moreDetails").open = true;
   $("voicesBubble").textContent = state.form === "online"
     ? "このPCのマイクの声と、会議から聞こえる相手の声を分けて聞きます。声の登録はいりません！"
-    : "準備はこれだけです！「面談を開始」を押してください。上司さんの言葉で部下さんが傷つきそうな時に、そっと言い直しますね。";
+    : "準備はこれだけです！「面談を開始」を押してください。部下さんが自分を責めそうな時に、片耳のイヤホンから、短く声をかけますね。上司さんの言葉は変えません。";
 }
 
 function setForm(form) {
@@ -823,6 +849,7 @@ async function startMeeting() {
   state.goalsAuto = new Set();
   state.goalsManual = new Map();
   state.receiveTipAt = {};
+  state.lastVoiceTipAt = 0;
   resetReceive();
   state.turnLog = [];
   state.meter = Metrics.createMeter();
@@ -957,6 +984,7 @@ async function endMeeting() {
     const data = await postJSON("/end-session", { turn_log: state.turnLog, metrics: state.meter ? state.meter.export() : [], intent_covered: goalsDoneCount() });
     state.meeting.logFile = data.file || null;
     state.meeting.receive = data.receive || null;
+    state.meeting.skillLabels = data.skill_labels || {};
     state.meeting.receivePrev = data.receive_previous || null;
   } catch (e) {
     console.error(e);
@@ -1164,18 +1192,23 @@ function showBossHint(title, result) {
 }
 
 // 部下が自分を責める言葉を言った時：声では割り込まず、view viewの画面に「行動と次の一手での言い直し」を出す
-const RECEIVE_TIP_GAP_MS = 60000;
+// 発注書v22：積極的に。同じ種類は30秒に1回まで、声は全体で30秒に1回まで（重い自己否定は声を優先する）
+const RECEIVE_TIP_GAP_MS = 30000;
+const RECEIVE_VOICE_GAP_MS = 30000;
 function showReceiveTip(sig) {
   const text = sig.rewrite || sig.reframe;
   if (!text) return;
   const now = performance.now();
   if (state.receiveTipAt[sig.id] && now - state.receiveTipAt[sig.id] < RECEIVE_TIP_GAP_MS) return;
-  // 自己否定のサインのうち、重いとき（strong）だけ、最初に「声でも話す」を選んでいれば短く話しかける（内容は固定の文）。軽いときは画面だけ
-  if (sig.id === "self_blame" && sig.strength !== "normal" && voiceActive() && !state.demo && !state.isSpeaking && state.isRecording) {
-    setTimeout(() => { if (state.isRecording && !state.isSpeaking) speakAs("mofu", sig.voice || "自分を責めなくて大丈夫です。起きたことと、自分への評価を分けて見てみましょう。"); }, 700);
+  // 声は、イヤホン確認ずみのときだけ。内容は固定の文。重い自己否定は常に、それ以外は前の声から30秒あいていれば話しかける
+  const strong = sig.id === "self_blame" && sig.strength !== "normal";
+  const voiceGapOk = !state.lastVoiceTipAt || now - state.lastVoiceTipAt >= RECEIVE_VOICE_GAP_MS;
+  if (sig.voice && (strong || voiceGapOk) && voiceActive() && !state.demo && !state.isSpeaking && state.isRecording) {
+    state.lastVoiceTipAt = now;
+    setTimeout(() => { if (state.isRecording && !state.isSpeaking) speakAs("mofu", sig.voice); }, 700);
   }
   state.receiveTipAt[sig.id] = now;
-  const result = { cushion_phrase: "", reframed_speech: text, reply_example: sig.rewrite_example || "", reply_label: "言い直しの例", objective: sig.objective || null };
+  const result = { cushion_phrase: "", reframed_speech: text, reply_example: sig.rewrite_example || "", reply_label: "言い直しの例", objective: sig.objective || null, next_steps: sig.next_steps || null, signalRec: sig._rec || null };
   const title = sig.title || "自分を責めなくて大丈夫";
   showSpeechBubble(result, title);
   addMofuLine(`${text}（画面で）`);
@@ -1278,6 +1311,29 @@ function stageShow(bubble) {
   if (useStage() && StageLink.connected()) StageLink.show(bubble);
 }
 
+// リアルタイムの振り返り：その場で「次の一手」を1つ選ぶ。選んだ一手は面談中の記憶だけに置き、ふりかえり画面で使う（保存も送信もしない）
+function renderNextSteps(steps, rec) {
+  const box = $("speechNext"), chips = $("speechNextChips"), done = $("speechNextDone");
+  chips.replaceChildren();
+  done.hidden = true;
+  box.hidden = !(steps && steps.length);
+  if (box.hidden) return;
+  steps.forEach((step) => {
+    const b = el("button", "", step);
+    b.type = "button";
+    b.addEventListener("click", () => {
+      chips.querySelectorAll("button").forEach((x) => (x.disabled = true));
+      if (rec) rec.chosen = step;
+      if (state.receive) state.receive.nextSteps = (state.receive.nextSteps || 0) + 1;
+      done.textContent = `次の一手：「${step}」。いい一手です。`;
+      done.hidden = false;
+      addMofuLine(`次の一手：${step}`);
+      if (voiceActive() && !state.demo && !state.isSpeaking && state.isRecording) setTimeout(() => speakAs("mofu", "いい一手です。それでいきましょう。"), 300);
+    });
+    chips.appendChild(b);
+  });
+}
+
 function showSpeechBubble(result, label) {
   clearTimeout(oldSpeechTimer);
   const intent = label ? "" : intentLine();
@@ -1298,6 +1354,7 @@ function showSpeechBubble(result, label) {
   $("speechReply").hidden = !result.reply_example;
   $("speechReplyLabel").textContent = result.reply_label || "言えるひとこと";
   $("speechReplyText").textContent = result.reply_example || "";
+  renderNextSteps(result.next_steps, result.signalRec);
   $("speechFeedback").hidden = true;
   const speech = $("speech");
   speech.hidden = false;
@@ -1590,7 +1647,9 @@ async function analyzeEntry(entry, ctx, live) {
     if (sig) {
       entry.el.classList.add("is-signal");
       entry.el.appendChild(el("span", "tag tag-signal", "💭 " + sig.label));
-      m.signals.push({ time: entry.time, transcript: entry.text, label: sig.label, hint: sig.hint });
+      const rec = { time: entry.time, transcript: entry.text, label: sig.label, hint: sig.hint, id: sig.id, strength: sig.strength || "", objective: sig.objective || null, example: sig.rewrite_example || "", demo: !!state.demo, chosen: "" };
+      m.signals.push(rec);
+      sig._rec = rec;
       setForecast("signal", sig.forecast);
       // 上司向けのヒントは、話者を分けない時は出さない（誰が見ているか分からないため）。部下の方への声かけ・画面の案内は出す
       if (isSub) showHint("sub", "💭 部下さんのサイン", sig.hint, "部下の発言から：" + sig.label);
@@ -2038,6 +2097,80 @@ function renderReceiveSummary(m) {
   if (pa) $("smReceiveBoss").textContent = `上司の方へ：人や能力に向いた言葉が ${pa}回 ありました。これは受け取る側の練習ではなく、言い方で直す部分です。「どの行動を、なぜ、どう変えてほしいか」で伝えると届きやすくなります。`;
 }
 
+// ---------- いっしょにふりかえる（行動への反省・メタ認知）----------
+// 起きたこと（事実）／そのとき浮かんだ評価／次に変えられる行動、の3つに分けて、本人が言葉にする。入力は保存も送信もしない
+const REFLECT_ORDER = { self_blame: 0, give_up: 1, distress: 2, comparison: 3, over_apology: 4 };
+function reflectField(label, placeholder) {
+  const wrap = el("label", "reflect-field");
+  wrap.appendChild(el("span", "reflect-label", label));
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 80;
+  input.placeholder = placeholder;
+  input.autocomplete = "off";
+  wrap.appendChild(input);
+  return { wrap, input };
+}
+function reflectCompose(fact, action, out) {
+  const f = fact.value.trim().replace(/[。.]+$/, ""), a = action.value.trim().replace(/[。.]+$/, "").replace(/(?:します|する|したい|しよう|していく)$/, "");
+  out.textContent = f && a
+    ? `「${f}。次は${a}します。」――自分の価値の話ではなく、起きたことと次の行動の話になりました。`
+    : "「起きたこと」と「次の行動」を一言ずつ書くと、ひとことにまとめます。短くて大丈夫です。";
+  out.hidden = false;
+}
+function renderReflection(m) {
+  const body = $("reflectBody");
+  body.replaceChildren();
+  const real = m.signals.filter((s) => !s.demo);
+  const pool = real.length ? real : m.signals;
+  const moments = pool.slice().sort((a, b) => {
+    const sa = a.id === "self_blame" && a.strength !== "normal" ? -1 : 0;
+    const sb = b.id === "self_blame" && b.strength !== "normal" ? -1 : 0;
+    return sa - sb || (REFLECT_ORDER[a.id] ?? 9) - (REFLECT_ORDER[b.id] ?? 9);
+  }).slice(0, 3);
+  const skills = (m.receive && m.receive.skills) || {};
+  const labels = m.skillLabels || {};
+  const good = Object.entries(skills).filter(([, n]) => n > 0).map(([k, n]) => `${labels[k] || k} ${n}回`);
+  $("reflectLead").textContent = (good.length ? `今日できていた受け取り方：${good.join("・")}。まずここを認めましょう。` : "まず、今日の面談で自分がうまくできた行動を一つ思い出してみましょう。")
+    + (moments.length ? " つぎに、心が揺れた場面を、view viewといっしょに「事実」「評価」「次の行動」に分けて見てみます。" : "");
+  moments.forEach((s) => {
+    const card = el("div", "reflect-moment");
+    card.appendChild(el("p", "reflect-quote", `${s.time} ・ 「${s.transcript}」と話した場面`));
+    const ob = s.objective || {};
+    const fact = reflectField("① 起きたこと（事実だけ）", ob.fact || "例：資料の提出が遅れた");
+    card.appendChild(fact.wrap);
+    card.appendChild(el("p", "reflect-eval", `② そのとき浮かんだ評価：${ob.judgement ? `「${ob.judgement}」` : s.label}。` + (ob.question ? ` ${ob.question}` : " これは事実ですか？それとも、自分への評価ですか？")));
+    const action = reflectField(s.chosen ? "③ 次に変えられる行動（面談中に選んだ一手。変えても大丈夫です）" : "③ 次に変えられる行動（1つ）", (s.example || "例：期限の前日に進み具合を共有する").replace(/^「|」$/g, "").replace(/〇〇|△△/g, "…"));
+    if (s.chosen) action.input.value = s.chosen;
+    card.appendChild(action.wrap);
+    const out = el("p", "reflect-out", "");
+    out.hidden = true;
+    const btn = el("button", "btn btn-ghost", "ひとことにまとめる");
+    btn.type = "button";
+    btn.addEventListener("click", () => reflectCompose(fact.input, action.input, out));
+    card.append(btn, out);
+    body.appendChild(card);
+  });
+  // 場面がなくても、今日の自分の行動をふりかえる（できたこと→次に変えたいこと）
+  const own = el("div", "reflect-moment");
+  own.appendChild(el("p", "reflect-quote", "今日の自分の行動"));
+  const well = reflectField("うまくできた行動を1つ", "例：分からない所を具体的に聞けた");
+  const next = reflectField("次の面談で、変えてみたい行動を1つ", "例：指摘を受けたら、直す点を一言で復唱する");
+  const ownOut = el("p", "reflect-out", "");
+  ownOut.hidden = true;
+  const ownBtn = el("button", "btn btn-ghost", "次の一手にまとめる");
+  ownBtn.type = "button";
+  ownBtn.addEventListener("click", () => {
+    const w = well.input.value.trim(), n = next.input.value.trim();
+    ownOut.textContent = w || n
+      ? `${w ? `できたこと：${w}。` : ""}${n ? `次の一手：${n}。` : ""}小さな一歩で大丈夫です。`
+      : "どちらか一つでも書くと、次の一手にまとめます。";
+    ownOut.hidden = false;
+  });
+  own.append(well.wrap, next.wrap, ownBtn, ownOut);
+  body.appendChild(own);
+}
+
 function renderSummary() {
   const m = state.meeting;
   const count = voicedCount(m);
@@ -2075,6 +2208,7 @@ function renderSummary() {
   $("smGoalsList").replaceChildren(...goals.map((g, i) => el("li", goalDone(i) ? "is-done" : "", g + (goalDone(i) ? "" : "（まだ話題に出ていないかも）"))));
 
   renderReceiveSummary(m);
+  renderReflection(m);
 
   const byOutcome = (keys) => m.interventions.filter((iv) => keys.includes(iv.outcome)).length;
   $("smOutcomes").textContent = m.interventions.length
@@ -2174,7 +2308,6 @@ async function openDrawer() {
   $("setPace").value = paceKey();
   $("setUseClaude").checked = !!(state.config.judge && state.config.judge.use_claude);
   $("setShowProfile").checked = showProfile();
-  $("setLogRaw").checked = !!privacy().log_raw;
   $("zoomEnabled").checked = !!zc.enabled;
   $("zoomBoss").value = zc.boss_name || "";
   $("zoomSub").value = zc.subordinate_name || "";
@@ -2308,7 +2441,7 @@ async function saveSettings() {
   state.config.name_masks = masks;
   state.config.turn = { pace: $("setPace").value };
   state.config.judge = { use_claude: $("setUseClaude").checked };
-  state.config.privacy = { show_profile: $("setShowProfile").checked, log_raw: $("setLogRaw").checked };
+  state.config.privacy = { show_profile: $("setShowProfile").checked };
   if (state.isRecording) {
     feedTurn({ type: "mode", pace: state.demo ? "check" : paceKey() });
     $("mtType").hidden = !showProfile();
@@ -2360,7 +2493,7 @@ $("brandHome").addEventListener("click", () => {
 $("qPrev").addEventListener("click", () => {
   if (state.qIndex > 0) { state.qIndex--; renderQuestion(); }
 });
-$("btnShowPresets").addEventListener("click", showPresets);
+$("btnShowPresets").addEventListener("click", () => finishAnalysis({ preset: "general" }));   // 自己チェックを飛ばして標準の設定で始める
 document.querySelectorAll("#situation button").forEach((b) => b.addEventListener("click", () => setSituation(b.dataset.situation)));
 document.querySelectorAll("#voiceOn button").forEach((b) => b.addEventListener("click", () => setVoiceOn(b.dataset.voice === "on")));
 $("mtSituation").addEventListener("change", (e) => setSituation(e.target.value));
@@ -2369,10 +2502,6 @@ $("earphoneOk").addEventListener("change", (e) => {
   state.earphone = e.target.checked;
   setVoiceOn(state.voiceOn);
   saveProfileEdits().catch(() => {});
-});
-$("btnBackToQuestions").addEventListener("click", () => {
-  $("questionWrap").hidden = false;
-  $("presetPicker").hidden = true;
 });
 document.querySelectorAll("#sensitivity button").forEach((b) =>
   b.addEventListener("click", () => { state.sensitivity = b.dataset.level; renderSensitivity(); })
@@ -2455,8 +2584,9 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("drawer").hidden) closeDrawer();
   if (e.target.closest && e.target.closest("input, textarea, select")) return;
   const screen = $("app").dataset.screen;
-  if (screen === "analyze" && !$("questionWrap").hidden && ["1", "2", "3", "4"].includes(e.key)) {
-    chooseAnswer(Number(e.key) - 1);
+  if (screen === "analyze" && !$("questionWrap").hidden && /^[1-5]$/.test(e.key)) {
+    const q = state.questions[state.qIndex];
+    if (Number(e.key) <= (q && q.scale === 5 ? 5 : 4)) chooseAnswer(Number(e.key) - 1);
   }
   if (screen === "meeting" && state.isRecording && $("drawer").hidden) {
     const mode = { 0: "auto", 1: "boss", 2: "subordinate", 3: "any" }[e.key];

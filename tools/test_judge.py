@@ -50,7 +50,7 @@ log = {
 saved = str(main.log_for_disk(log, {}))
 check("既定のログに原文・実名・回答が残らない", not any(w in saved for w in ["実名", "部下の原文", "answers", "性格補正", "セリフ"]))
 check("判断の記録は残る", "raise" in saved)
-check("設定すれば原文も残せる", main.log_for_disk(log, {"privacy": {"log_raw": True}}) is log)
+check("設定にかかわらず原文は残さない", main.log_for_disk(log, {"privacy": {"log_raw": True}}).get("raw_text_saved") is False)
 
 # Claudeへの依頼内容（通信はしない）
 from types import SimpleNamespace as NS  # noqa: E402
@@ -134,24 +134,60 @@ for preset in main.TYPE_KEYS:
 pa = main.get_dummy_response("使えないな", {"active_preset": "perfectionist", "sensitivity": "low", "personality_presets": {}}, [], {})
 check("人格・能力の否定は、感度「控えめ」でも介入する", pa["should_intervene"] and pa["category_id"] == "personal_attack")
 
-# ---- 4タイプの傾向診断（24問） ----
-print("\n傾向診断")
-Q = main.PROFILE_QUESTIONS
-check("24問で、4つの傾向に6問ずつ（うち逆の聞き方1問）", len(Q) == 24 and all(
-    sum(1 for q in Q if q["dim"] == d) == 6 and sum(1 for q in Q if q["dim"] == d and q["reverse"]) == 1 for d in main.TYPE_KEYS))
-check("上司向け・本人向けの質問文が両方ある", all(q["boss"] and q["self"] for q in Q))
-ans = {q["id"]: (0 if q["reverse"] else 3) if q["dim"] == "independent" else (3 if q["reverse"] else 0) for q in Q}
-sc = main.score_profile(ans)
-check("自分で決めたい傾向だけ強い答え → その傾向が100点・ほかは0点", sc == {"perfectionist": 0, "logical": 0, "sensitive": 0, "independent": 100}, ) if True else None
-conf = main.profile_confidence(ans, sc)
-check("偏りも矛盾もない答えは「確かさ：高」", conf["level"] == "high" and not conf["mixed"])
-same = {q["id"]: 2 for q in Q}
-check("全部同じ答えは「確かさ：低」", main.profile_confidence(same, main.score_profile(same))["level"] == "low")
-contra = {q["id"]: 3 for q in Q if q["dim"] in ("perfectionist", "sensitive")}
-contra.update({q["id"]: 0 for q in Q if q["dim"] in ("logical", "independent")})
-check("逆の聞き方とも「当てはまる」と答える矛盾が2か所 →「確かさ：低」", main.profile_confidence(contra, main.score_profile(contra))["level"] == "low")
-half = {q["id"]: 1 for q in Q[:10]}
-check("未回答が多いと「確かさ：低」", main.profile_confidence(half, main.score_profile(half))["level"] == "low")
+# ---- つらいときの自分への接し方（セルフ・コンパッション尺度 日本語版 26項目） ----
+print("\nセルフ・コンパッション尺度（SCS-J）")
+SUBS = main.SCS_SUBSCALES
+check("26項目で、日本語の文が全部ある", len(main.SCS_ITEMS) == 26 and all(isinstance(t, str) and len(t) > 10 for t in main.SCS_ITEMS.values()))
+check("下位尺度の項目数は 5・5・4・4・4・4 で、1〜26を重複なく使う",
+      [len(v[1]) for v in SUBS.values()] == [5, 5, 4, 4, 4, 4] and sorted(n for v in SUBS.values() for n in v[1]) == list(range(1, 26 + 1)))
+check("逆転して採点するのは、自己批判・孤独感・過剰同一化だけ", {k for k, v in SUBS.items() if v[2]} == {"self_judgment", "isolation", "over_identification"})
+
+def scs_answers(pos, neg):
+    """やさしさ側の項目に pos、厳しさ側（逆転項目）の項目に neg と答えた答え"""
+    return {f"s{n}": (neg if rev else pos) for _, nums, rev in SUBS.values() for n in nums}
+
+hi, lo = main.score_scs(scs_answers(5, 1)), main.score_scs(scs_answers(1, 5))
+check("やさしい側が5、厳しい側が1（逆転して5）→ 総得点5.0・高め", hi["total"] == 5.0 and hi["level"] == "high")
+check("やさしい側が1、厳しい側が5（逆転して1）→ 総得点1.0・低め", lo["total"] == 1.0 and lo["level"] == "low")
+check("すべて3と答えると、逆転しても3 → 総得点3.0・中ほど", main.score_scs(scs_answers(3, 3))["total"] == 3.0 and main.score_scs(scs_answers(3, 3))["level"] == "moderate")
+check("すべて1と答えると、逆転項目だけ5になる（総得点3.0）",
+      main.score_scs(scs_answers(1, 1))["subscales"]["self_kindness"] == 1 and main.score_scs(scs_answers(1, 1))["subscales"]["self_judgment"] == 5
+      and main.score_scs(scs_answers(1, 1))["total"] == 3.0)
+check("目安の境目：2.5ちょうどは「中ほど」、3.5ちょうども「中ほど」、2.0は「低め」、4.0は「高め」",
+      main.score_scs(scs_answers(2, 3))["level"] == "moderate" and main.score_scs(scs_answers(4, 3))["level"] == "moderate"
+      and main.score_scs(scs_answers(2, 4))["level"] == "low" and main.score_scs(scs_answers(4, 2))["level"] == "high")
+check("総得点は、6つの下位尺度の平均の平均（項目数が違っても同じ重み）",
+      abs(main.score_scs({**scs_answers(3, 3), "s5": 5, "s12": 5, "s19": 5, "s23": 5, "s26": 5})["total"] - (5 + 3 + 3 + 3 + 3 + 3) / 6) < 1e-9)
+bad = []
+for broken in ({**scs_answers(3, 3), "s7": 0}, {**scs_answers(3, 3), "s7": 6}, {**scs_answers(3, 3), "s7": True}, {k: v for k, v in scs_answers(3, 3).items() if k != "s26"}, {}):
+    try:
+        main.score_scs(broken); bad.append(broken.get("s7"))
+    except ValueError:
+        pass
+check("未回答・範囲外（0・6）・真偽値の答えは受け付けない", not bad)
+
+res = main.build_scs_result(scs_answers(1, 5))
+check("結果：4タイプには分けず、標準の声かけ（general）に接続する", res["kind"] == "scs" and res["primary"] == "general" and res["secondary"] is None and not res["watch_points"])
+check("結果：目安の言葉と総得点が入る", "自分に厳しくなりやすい" in res["label"] and res["scs"]["total"] == 1.0)
+check("結果：説明は論文の引用つきで、診断ではないと明記する",
+      any("Leary" in t for t in res["scs"]["body"]) and any("有光" in t for t in res["scs"]["body"]) and any("診断でもありません" in t for t in res["scs"]["notes"]))
+check("結果：測っていないこと（他人の言葉の受け取り方・反芻・悪い予測）を明記する",
+      any("測っていません" in t and "反芻" in t and "受け取りやすいか" in t for t in res["scs"]["notes"]))
+d = main.build_default_result()
+check("標準の設定：タイプ分けも得点もなく、感度は「ふつう」、標準の声かけ（general）に接続する",
+      d["kind"] == "default" and d["primary"] == "general" and d["scores"] is None and d["scs"] is None and d["recommended_sensitivity"] == "medium" and not d["watch_points"])
+check("結果：検証が大学生だったこと・声かけの積極さは設計判断であることを明記する",
+      any("大学生" in t for t in res["scs"]["notes"]) and any("設計上の判断" in t for t in res["scs"]["notes"]))
+check("結果：出典に日本語版の論文が入る", any("85(1), 50-59" in s["label"] for s in res["scs"]["sources"]))
+check("おすすめの感度：低めなら積極的、高めなら控えめ",
+      main.build_scs_result(scs_answers(1, 5))["recommended_sensitivity"] == "high" and main.build_scs_result(scs_answers(5, 1))["recommended_sensitivity"] == "low"
+      and main.build_scs_result(scs_answers(3, 3))["recommended_sensitivity"] == "medium")
+check("標準（general）では、自己否定の声かけは標準の文になり、傾向の補正はかからない",
+      main.self_blame_style(main.GENERAL_TYPE) is main.DEFAULT_SELF_BLAME_STYLE and main.category_weights({"active_preset": main.GENERAL_TYPE}) == {})
+check("標準（general）でも、厳しい言葉には従来どおり介入する",
+      main.get_dummy_response("なんでもっと早く相談しなかったの？", {"active_preset": main.GENERAL_TYPE, "sensitivity": "medium", "personality_presets": {}, "judge": {"use_claude": False}}, [], {"situation": "progress"})["should_intervene"])
+check("外部に渡す傾向の文には、得点の数値を入れない",
+      main.tendency_text({"profile_analysis": res}) == "つらいときの自分への接し方：自分に厳しくなりやすい")
 
 # ---- 面談の状況 ----
 print("\n面談の状況")
@@ -440,6 +476,47 @@ for k in main.TYPE_KEYS:
     check(f"{k}：「人と比べる」「つらさ」に、傾向別の言い直しが出て、声は出さない（strengthなし）",
           sc and sd and sc["rewrite"] == main.COMPARISON_STYLE[k][0] and sd["rewrite"] == main.DISTRESS_STYLE[k][0] and "strength" not in sc and "strength" not in sd)
 main.load_config = _orig_load_config18
+
+# ---- 発注書v21：部下の発言をClaudeでも見分ける（送るのは、ルールで拾えなかった発言だけ）----
+import json as _json  # noqa: E402
+_calls = []
+class _Msgs:
+    def create(self, **kw):
+        _calls.append(kw["messages"][0]["content"])
+        latest = kw["messages"][0]["content"].split("【最新の発言】\n")[1]
+        sig = "self_blame" if "役立たず" in latest else "none"
+        return NS(stop_reason="end_turn", content=[NS(type="text", text=_json.dumps({"signal": sig, "strong": True}))])
+class _FakeClient:
+    messages = _Msgs()
+    beta = NS(messages=_Msgs())
+    def with_options(self, **k):
+        return self
+_orig = (main.client, main.load_config, dict(main.api_state))
+_cfg = dict(main.load_config()); _cfg["judge"] = {"use_claude": True}
+main.client, main.load_config = _FakeClient(), (lambda: _cfg)
+main.api_state["disabled"] = False
+tc.post("/start-session")
+def _sub(t, src="mic"):
+    r = tc.post("/analyze", json={"transcript": t, "speaker": "subordinate", "context": [], "speaker_source": src}).json()
+    return (r.get("subordinate_signal") or {}).get("id"), r["sent_data"]["external_sent"]
+check("ルールで拾えない部下の発言を、Claudeが自己否定と見分けて画面に出し、送信を記録する", _sub("今回も本当に役立たずだったと思います") == ("self_blame", True))
+n = len(_calls)
+check("ルールで拾えた発言は、Claudeに送らない", _sub("私のせいです") == ("self_blame", False) and len(_calls) == n)
+check("短い相づちとデモの発言は、Claudeに送らない", _sub("はい") == (None, False) and _sub("今回も本当に役立たずだったと思います", "demo") == (None, False) and len(_calls) == n)
+main.load_config = lambda: {**_cfg, "judge": {"use_claude": False}}
+check("設定がオフなら、部下の発言は送らない", _sub("また役立たずでした本当に") == (None, False) and len(_calls) == n)
+main.client, main.load_config = _orig[0], _orig[1]
+main.api_state.update(_orig[2])
+
+# ---- 発注書v22：声かけを全種類に広げる（固定文・40字以内・傾向の名前なし）----
+_voices = {sid: main.self_rewrite(sid, "テスト", None, "perfectionist").get("voice", "") for sid in ("self_blame", "give_up", "comparison", "distress", "over_apology")}
+check("すべての種類に、声の固定文がある（40字以内）", all(v and len(v) <= 40 for v in _voices.values()))
+check("声の固定文に、傾向の名前や「タイプ」を出さない", not any(lb in v or "タイプ" in v for v in _voices.values() for lb in labels_v15))
+
+# ---- 発注書v23：リアルタイムの振り返り（その場で選ぶ次の一手）----
+_ns = {sid: main.self_rewrite(sid, "テスト", None, "logical").get("next_steps") for sid in ("self_blame", "give_up", "comparison", "distress", "over_apology")}
+check("すべての種類に、その場で選べる次の一手が3つある（固定文）", all(v and len(v) == 3 for v in _ns.values()))
+check("次の一手に、傾向の名前や「タイプ」を出さない", not any(lb in t or "タイプ" in t for v in _ns.values() for t in v for lb in labels_v15))
 
 print("\n失敗 0" if not failed else f"\n失敗 {failed}")
 sys.exit(1 if failed else 0)
